@@ -1,7 +1,6 @@
-FROM node:20-alpine as build
+FROM node:20-alpine AS build
 WORKDIR /app
 COPY package*.json ./
-RUN rm -f package-lock.json
 ENV CI=true
 RUN npm install --legacy-peer-deps
 COPY . .

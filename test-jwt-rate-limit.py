@@ -16,8 +16,9 @@ from typing import Dict, Any
 
 # Configuration
 GATEWAY_BASE_URL = "http://localhost:8080"
-ADMIN_API_URL = f"http://localhost:9090/poormansRateLimit/api/admin/rules"
-TEST_ENDPOINT = f"{GATEWAY_BASE_URL}/httpbin/get"
+ADMIN_API_URL = f"http://localhost:9090/api/admin/rules"
+TEST_ENDPOINT = f"{GATEWAY_BASE_URL}/get"  # Direct path to httpbin's /get endpoint
+HTTPBIN_TARGET_URL = "http://httpbin:80/get"  # Full httpbin URL with path
 
 def create_unsecured_jwt(payload: Dict[str, Any]) -> str:
     """
@@ -46,7 +47,8 @@ def create_unsecured_jwt(payload: Dict[str, Any]) -> str:
 def create_jwt_rule():
     """Create a JWT-based rate limit rule for testing."""
     rule = {
-        "pathPattern": "/httpbin/**",
+        "pathPattern": "/get",  # Match httpbin's /get endpoint directly
+        "targetUri": HTTPBIN_TARGET_URL,
         "allowedRequests": 5,  # Low limit for easy testing
         "windowSeconds": 60,
         "active": True,
@@ -144,7 +146,7 @@ def cleanup_rules():
         rules = response.json()
         
         for rule in rules:
-            if rule['pathPattern'] == '/httpbin/**':
+            if rule['pathPattern'] == '/get':
                 delete_url = f"{ADMIN_API_URL}/{rule['id']}"
                 requests.delete(delete_url)
                 print(f"🗑️  Deleted test rule: {rule['id']}")

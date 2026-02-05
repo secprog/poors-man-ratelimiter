@@ -18,6 +18,12 @@ services:
     command: sh -c "pip install flask -q && python test-server.py"
     restart: always
 
+  httpbin:
+    image: kennethreitz/httpbin
+    ports:
+      - "8081:80"
+    restart: always
+
   backend:
     build: ./backend
     ports:
@@ -27,9 +33,11 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       TEST_SERVER_URL: http://test-server:9000
+      HTTPBIN_URL: http://httpbin:80
     depends_on:
       - redis
       - test-server
+      - httpbin
     restart: always
 
   frontend:
