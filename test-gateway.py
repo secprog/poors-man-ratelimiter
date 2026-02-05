@@ -90,9 +90,9 @@ def test_gateway_routes():
     print_header("TEST 2: Gateway Basic Routing")
     
     try:
-        response = requests.get(f"{GATEWAY_URL}/test/api/hellollo", timeout=10)
+        response = requests.get(f"{GATEWAY_URL}/test/api/hello", timeout=10)
         if response.status_code == 200:
-            print_success("Gateway is routing to httpbin successfully")
+            print_success("Gateway is routing successfully")
             print_info(f"Response status: {response.status_code}")
             return True
         else:
