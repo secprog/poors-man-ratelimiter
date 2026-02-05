@@ -12,7 +12,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/poormansRateLimit/api/admin/analytics")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class AnalyticsController {
 
     private final AnalyticsService analyticsService;

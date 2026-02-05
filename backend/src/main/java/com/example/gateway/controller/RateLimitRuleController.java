@@ -15,7 +15,6 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/poormansRateLimit/api/admin/rules")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 @Slf4j
 public class RateLimitRuleController {
 

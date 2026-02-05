@@ -12,7 +12,6 @@ import java.util.Map;
 @RestController
 @RequestMapping("/poormansRateLimit/api/admin/config")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class SystemConfigController {
 
     private final ConfigurationService configService;
