@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { LayoutDashboard, Shield, Settings as SettingsIcon, Menu } from 'lucide-react';
+import { LayoutDashboard, Shield, Settings as SettingsIcon, Menu, BarChart3 } from 'lucide-react';
 import { clsx } from 'clsx';
 import Dashboard from './pages/Dashboard';
 import Policies from './pages/Policies';
 import Settings from './pages/Settings';
+import Analytics from './pages/Analytics';
 
 function App() {
     const [currentPage, setCurrentPage] = useState('dashboard');
@@ -30,6 +31,13 @@ function App() {
                         active={currentPage === 'dashboard'}
                         collapsed={!sidebarOpen}
                         onClick={() => setCurrentPage('dashboard')}
+                    />
+                    <SidebarItem
+                        icon={<BarChart3 size={20} />}
+                        label="Analytics"
+                        active={currentPage === 'analytics'}
+                        collapsed={!sidebarOpen}
+                        onClick={() => setCurrentPage('analytics')}
                     />
                     <SidebarItem
                         icon={<Shield size={20} />}
@@ -61,6 +69,7 @@ function App() {
             <main className="flex-1 overflow-auto">
                 <div className="p-8">
                     {currentPage === 'dashboard' && <Dashboard />}
+                    {currentPage === 'analytics' && <Analytics />}
                     {currentPage === 'policies' && <Policies />}
                     {currentPage === 'settings' && <Settings />}
                 </div>

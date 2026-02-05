@@ -1,0 +1,76 @@
+# Backend - Maven
+backend/target/
+backend/.classpath
+backend/.project
+backend/.settings/
+backend/bin/
+backend/*.jar
+backend/*.war
+
+# Backend - IDE
+backend/.idea/
+backend/.vscode/
+backend/*.iml
+backend/*.iws
+backend/*.ipr
+
+# Frontend - Node modules and build
+frontend/node_modules/
+frontend/dist/
+frontend/.next/
+frontend/build/
+.playwright-mcp/
+
+# Frontend - IDE
+frontend/.idea/
+frontend/.vscode/
+frontend/*.iml
+frontend/*.iws
+frontend/*.ipr
+
+# IDE & Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+.project
+.classpath
+.c9/
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# Environment
+.env
+.env.local
+.env.*.local
+.env.production.local
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Runtime
+*.class
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# System files
+.gitkeep

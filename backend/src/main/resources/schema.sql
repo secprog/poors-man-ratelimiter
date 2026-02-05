@@ -8,6 +8,14 @@ CREATE TABLE IF NOT EXISTS rate_limit_policies (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS rate_limit_rules (
+    id UUID PRIMARY KEY,
+    path_pattern VARCHAR(255) NOT NULL,
+    allowed_requests INTEGER NOT NULL,
+    window_seconds INTEGER NOT NULL,
+    active BOOLEAN DEFAULT true
+);
+
 CREATE TABLE IF NOT EXISTS rate_limit_state (
     limit_key VARCHAR(255) PRIMARY KEY,
     remaining_tokens INTEGER NOT NULL,
@@ -34,6 +42,23 @@ CREATE TABLE IF NOT EXISTS request_stats (
     allowed_count BIGINT DEFAULT 0,
     blocked_count BIGINT DEFAULT 0,
     CONSTRAINT unique_time_window UNIQUE (time_window)
+);
+
+CREATE TABLE IF NOT EXISTS traffic_logs (
+    id UUID PRIMARY KEY,
+    timestamp TIMESTAMP NOT NULL,
+    path VARCHAR(255) NOT NULL,
+    client_ip VARCHAR(45) NOT NULL,
+    status_code INTEGER NOT NULL,
+    allowed BOOLEAN NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS request_counters (
+    rule_id UUID NOT NULL,
+    client_ip VARCHAR(45) NOT NULL,
+    request_count INTEGER NOT NULL,
+    window_start TIMESTAMP NOT NULL,
+    PRIMARY KEY (rule_id, client_ip)
 );
 
 -- Insert a default policy for testing

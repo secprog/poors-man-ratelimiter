@@ -1,5 +1,7 @@
 package com.example.gateway.service;
 
+import com.example.gateway.dto.AnalyticsUpdate;
+import com.example.gateway.websocket.AnalyticsBroadcaster;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.r2dbc.core.DatabaseClient;
@@ -17,6 +19,8 @@ import java.util.concurrent.atomic.AtomicLong;
 public class AnalyticsService {
 
     private final DatabaseClient databaseClient;
+    private final AnalyticsBroadcaster broadcaster;
+    private final PolicyService policyService;
 
     // In-memory counters for buffering
     private final AtomicLong pendingAllowed = new AtomicLong(0);
@@ -56,6 +60,31 @@ public class AnalyticsService {
                         null,
                         error -> log.error("Failed to flush analytics stats", error));
     }
+    
+    // Broadcast updates every 2 seconds
+    @Scheduled(fixedRate = 2000)
+    public void broadcastUpdates() {
+        getSummary()
+                .subscribe(
+                    summary -> {
+                        policyService.getAllPolicies()
+                                .collectList()
+                                .subscribe(
+                                    policies -> {
+                                        AnalyticsUpdate update = new AnalyticsUpdate(
+                                            summary.allowed(),
+                                            summary.blocked(),
+                                            (long) policies.size(),
+                                            System.currentTimeMillis()
+                                        );
+                                        broadcaster.broadcast(update);
+                                    },
+                                    error -> log.error("Failed to fetch policies for broadcast", error)
+                                );
+                    },
+                    error -> log.error("Failed to get summary for broadcast", error)
+                );
+    }
 
     public Mono<StatsSummary> getSummary() {
         // Simple summary: All time or last 24h. Let's do all time for now as table
@@ -71,6 +100,26 @@ public class AnalyticsService {
                 .defaultIfEmpty(new StatsSummary(0L, 0L));
     }
 
+    public Mono<java.util.List<TimeSeriesDataPoint>> getTimeSeries(int hours) {
+        Instant startTime = Instant.now().minus(hours, ChronoUnit.HOURS);
+        
+        return databaseClient.sql(
+                "SELECT time_window, allowed_count, blocked_count " +
+                        "FROM request_stats " +
+                        "WHERE time_window >= :startTime " +
+                        "ORDER BY time_window ASC")
+                .bind("startTime", startTime)
+                .map((row, meta) -> new TimeSeriesDataPoint(
+                        row.get("time_window", Instant.class),
+                        row.get("allowed_count", Long.class) != null ? row.get("allowed_count", Long.class) : 0L,
+                        row.get("blocked_count", Long.class) != null ? row.get("blocked_count", Long.class) : 0L))
+                .all()
+                .collectList();
+    }
+
     public record StatsSummary(Long allowed, Long blocked) {
+    }
+    
+    public record TimeSeriesDataPoint(Instant timestamp, Long allowed, Long blocked) {
     }
 }

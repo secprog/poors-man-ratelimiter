@@ -27,7 +27,7 @@ export default function Policies() {
 
     const fetchPolicies = async () => {
         try {
-            const res = await api.get('/policies');
+            const res = await api.get('/admin/policies');
             setPolicies(res.data);
         } catch (err) {
             console.error("Failed to fetch policies", err);
@@ -83,9 +83,9 @@ export default function Policies() {
 
         try {
             if (editingPolicy) {
-                await api.put(`/policies/${editingPolicy.policyId}`, formData, { headers });
+                await api.put(`/admin/policies/${editingPolicy.policyId}`, formData, { headers });
             } else {
-                await api.post('/policies', formData, { headers });
+                await api.post('/admin/policies', formData, { headers });
             }
             closeModal();
             fetchPolicies();
@@ -107,7 +107,7 @@ export default function Policies() {
         if (!confirm("Are you sure you want to delete this policy?")) return;
         try {
             // Delete doesn't necessarily need anti-bot token as it's idempotent, but could add it if method was strict
-            await api.delete(`/policies/${policyId}`);
+            await api.delete(`/admin/policies/${policyId}`);
             fetchPolicies();
         } catch (err) {
             console.error("Failed to delete policy", err);
