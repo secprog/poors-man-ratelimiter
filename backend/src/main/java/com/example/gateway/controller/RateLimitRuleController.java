@@ -4,6 +4,7 @@ import com.example.gateway.model.RateLimitRule;
 import com.example.gateway.service.RateLimiterService;
 import com.example.gateway.service.RouteSyncService;
 import com.example.gateway.store.RateLimitRuleStore;
+import com.example.gateway.store.RequestCounterStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -21,6 +22,7 @@ public class RateLimitRuleController {
     private final RateLimiterService rateLimiterService;
     private final RateLimitRuleStore ruleStore;
     private final RouteSyncService routeSyncService;
+    private final RequestCounterStore counterStore;
 
     @GetMapping
     public Flux<RateLimitRule> getAllRules() {
@@ -57,10 +59,10 @@ public class RateLimitRuleController {
                 .flatMap(existing -> {
                     rule.setId(id);
                     return ruleStore.save(rule)
-                        .flatMap(updated -> routeSyncService.syncRule(updated)
-                            .then(rateLimiterService.refreshRules())
-                            .thenReturn(updated))
-                        .doOnSuccess(updated -> log.info("Updated rate limit rule: {}", updated));
+                            .flatMap(updated -> routeSyncService.syncRule(updated)
+                                    .then(rateLimiterService.refreshRules())
+                                    .thenReturn(updated))
+                            .doOnSuccess(updated -> log.info("Updated rate limit rule: {}", updated));
                 });
     }
 
@@ -68,17 +70,18 @@ public class RateLimitRuleController {
     public Mono<RateLimitRule> updateQueueSettings(
             @PathVariable UUID id,
             @RequestBody QueueConfig queueConfig) {
-        
+
         return ruleStore.findById(id)
                 .flatMap(rule -> {
                     rule.setQueueEnabled(queueConfig.queueEnabled);
                     rule.setMaxQueueSize(queueConfig.maxQueueSize);
                     rule.setDelayPerRequestMs(queueConfig.delayPerRequestMs);
-                    
+
                     return ruleStore.save(rule)
                             .doOnSuccess(updated -> {
-                                log.info("Updated queue settings for rule {}: enabled={}, maxSize={}, delayMs={}", 
-                                        id, queueConfig.queueEnabled, queueConfig.maxQueueSize, queueConfig.delayPerRequestMs);
+                                log.info("Updated queue settings for rule {}: enabled={}, maxSize={}, delayMs={}",
+                                        id, queueConfig.queueEnabled, queueConfig.maxQueueSize,
+                                        queueConfig.delayPerRequestMs);
                                 rateLimiterService.refreshRules().subscribe();
                             });
                 });
@@ -86,7 +89,8 @@ public class RateLimitRuleController {
 
     @DeleteMapping("/{id}")
     public Mono<Void> deleteRule(@PathVariable UUID id) {
-        return ruleStore.deleteById(id)
+        return counterStore.deleteByRuleId(id)
+                .then(ruleStore.deleteById(id))
                 .then(routeSyncService.deleteRule(id))
                 .then(rateLimiterService.refreshRules())
                 .doOnSuccess(v -> log.info("Deleted rate limit rule: {}", id));
@@ -104,20 +108,20 @@ public class RateLimitRuleController {
     public Mono<RateLimitRule> updateBodyLimitSettings(
             @PathVariable UUID id,
             @RequestBody BodyLimitConfig bodyLimitConfig) {
-        
+
         return ruleStore.findById(id)
                 .flatMap(rule -> {
                     rule.setBodyLimitEnabled(bodyLimitConfig.bodyLimitEnabled);
                     rule.setBodyFieldPath(bodyLimitConfig.bodyFieldPath);
                     rule.setBodyLimitType(bodyLimitConfig.bodyLimitType);
-                    
+
                     return ruleStore.save(rule)
-                                .doOnSuccess(updated -> {
-                                    log.info("Updated body limit settings for rule {}: enabled={}, fieldPath={}, type={}", 
-                                            id, bodyLimitConfig.bodyLimitEnabled, bodyLimitConfig.bodyFieldPath, 
-                                            bodyLimitConfig.bodyLimitType);
-                                    rateLimiterService.refreshRules().subscribe();
-                                });
+                            .doOnSuccess(updated -> {
+                                log.info("Updated body limit settings for rule {}: enabled={}, fieldPath={}, type={}",
+                                        id, bodyLimitConfig.bodyLimitEnabled, bodyLimitConfig.bodyFieldPath,
+                                        bodyLimitConfig.bodyLimitType);
+                                rateLimiterService.refreshRules().subscribe();
+                            });
                 });
     }
 
@@ -130,8 +134,8 @@ public class RateLimitRuleController {
 
     // DTO for body-based rate limiting configuration
     public static class BodyLimitConfig {
-        public boolean bodyLimitEnabled;      // Enable/disable body-based rate limiting
-        public String bodyFieldPath;          // JSON path to extract (e.g., "user_id", "api_key", "user.id")
-        public String bodyLimitType;          // "replace_ip" (use body field instead of IP) or "combine_with_ip"
+        public boolean bodyLimitEnabled; // Enable/disable body-based rate limiting
+        public String bodyFieldPath; // JSON path to extract (e.g., "user_id", "api_key", "user.id")
+        public String bodyLimitType; // "replace_ip" (use body field instead of IP) or "combine_with_ip"
     }
 }

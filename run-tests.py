@@ -9,25 +9,33 @@ import time
 import os
 import signal
 
+
 def print_banner():
     print("=" * 70)
     print("  Rate Limiter Gateway - Test Environment")
     print("=" * 70)
     print()
 
-def check_dependencies():
+
+def check_dependencies(test_server_mode: str):
     """Check if required Python packages are installed"""
     try:
-        import flask
         import requests
+
+        if test_server_mode == "local":
+            import flask
         return True
     except ImportError as e:
         print(f"❌ Missing dependency: {e}")
         print("\nPlease install dependencies:")
         print("  pip install -r test-requirements.txt")
         print("\nOr manually:")
-        print("  pip install flask requests")
+        if test_server_mode == "local":
+            print("  pip install flask requests")
+        else:
+            print("  pip install requests")
         return False
+
 
 def start_test_server():
     """Start the test server in the background"""
@@ -37,19 +45,20 @@ def start_test_server():
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         universal_newlines=True,
-        bufsize=1
+        bufsize=1,
     )
-    
+
     # Wait a bit for the server to start
     time.sleep(2)
-    
+
     # Check if process is still running
     if proc.poll() is not None:
         print("❌ Test server failed to start!")
         return None
-    
+
     print("Test server started (PID: {})".format(proc.pid))
     return proc
+
 
 def run_tests():
     """Run the test suite"""
@@ -77,33 +86,41 @@ def run_tests():
 
     return exit_code
 
+
 def main():
     print_banner()
-    
-    # Check if dependencies are installed
-    if not check_dependencies():
+
+    test_server_mode = os.getenv("TEST_SERVER_MODE", "local").lower()
+    if test_server_mode not in ["local", "docker"]:
+        print("Invalid TEST_SERVER_MODE. Use 'local' or 'docker'.")
         sys.exit(1)
-    
+
+    # Check if dependencies are installed
+    if not check_dependencies(test_server_mode):
+        sys.exit(1)
+
     # Determine mode
     mode = "both"  # default
     if len(sys.argv) > 1:
         mode = sys.argv[1].lower()
-    
+
     if mode not in ["server", "tests", "both"]:
         print("Usage: python run-tests.py [server|tests|both]")
         print("  server - Start test server only")
         print("  tests  - Run tests only (assumes server is already running)")
         print("  both   - Start server and run tests (default)")
         sys.exit(1)
-    
+
     server_proc = None
-    
+
     try:
-        if mode in ["server", "both"]:
+        if mode in ["server", "both"] and test_server_mode == "local":
             server_proc = start_test_server()
             if server_proc is None:
                 sys.exit(1)
-        
+        elif mode in ["server", "both"]:
+            print("Using Docker test-server; skipping local test server startup.")
+
         if mode == "server":
             print("\nTest server is running. Press Ctrl+C to stop.")
             print("   You can now run tests with: python run-tests.py tests")
@@ -112,22 +129,24 @@ def main():
                 server_proc.wait()
             except KeyboardInterrupt:
                 print("\n\n⏹️  Stopping test server...")
-        
+
         elif mode in ["tests", "both"]:
             if mode == "both":
-                print("\nGiving server a moment to fully initialize...")
-                time.sleep(1)
-            
+                if test_server_mode == "local":
+                    print("\nGiving server a moment to fully initialize...")
+                    time.sleep(1)
+
             exit_code = run_tests()
-            
+
             if mode == "both":
-                print("\nStopping test server...")
-            
+                if test_server_mode == "local":
+                    print("\nStopping test server...")
+
             sys.exit(exit_code)
-    
+
     except KeyboardInterrupt:
         print("\n\nInterrupted by user")
-    
+
     finally:
         # Cleanup: stop the server if we started it
         if server_proc is not None:
@@ -137,5 +156,6 @@ def main():
             except:
                 server_proc.kill()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

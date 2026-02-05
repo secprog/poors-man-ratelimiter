@@ -37,6 +37,15 @@ public class RequestCounterStore {
                 .then();
     }
 
+    public Mono<Long> deleteByRuleId(UUID ruleId) {
+        String pattern = RedisKeys.requestCounterPatternForRule(ruleId);
+        return redisTemplate.keys(pattern)
+                .collectList()
+                .flatMap(keys -> keys.isEmpty()
+                        ? Mono.just(0L)
+                        : redisTemplate.delete(reactor.core.publisher.Flux.fromIterable(keys)));
+    }
+
     private Mono<String> serializeCounter(RequestCounter counter) {
         return Mono.fromCallable(() -> objectMapper.writeValueAsString(counter));
     }

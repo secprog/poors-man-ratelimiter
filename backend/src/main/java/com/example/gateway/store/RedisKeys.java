@@ -19,6 +19,10 @@ public final class RedisKeys {
         return REQUEST_COUNTER_PREFIX + ruleId + ":" + identifier;
     }
 
+    public static String requestCounterPatternForRule(UUID ruleId) {
+        return REQUEST_COUNTER_PREFIX + ruleId + ":*";
+    }
+
     public static String rateLimitStateKey(String limitKey) {
         return RATE_LIMIT_STATE_PREFIX + limitKey;
     }
