@@ -9,6 +9,7 @@ import com.example.gateway.repository.TrafficLogRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Service;
 import org.springframework.util.AntPathMatcher;
 import reactor.core.publisher.Mono;
@@ -27,6 +28,7 @@ public class RateLimiterService {
     private final RateLimitRuleRepository ruleRepository;
     private final RequestCounterRepository counterRepository;
     private final TrafficLogRepository logRepository;
+    private final DatabaseClient databaseClient;
 
     private final List<RateLimitRule> activeRules = new CopyOnWriteArrayList<>();
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
@@ -90,14 +92,22 @@ public class RateLimiterService {
     }
 
     private Mono<Void> logTraffic(String path, String ip, int status, boolean allowed) {
-        // Fire and forget logging to avoid latency impact?
-        // For robust data, we should await, but `subscribe()` is better for
-        // non-blocking log.
-        // We'll return Mono<Void> to allow caller to decide, but we won't block the
-        // decision on the log save if possible.
-        // Ideally: use a separate scheduler.
-
-        TrafficLog entry = new TrafficLog(UUID.randomUUID(), LocalDateTime.now(), path, ip, status, allowed);
-        return logRepository.save(entry).then();
+        // Use raw SQL INSERT instead of repository.save() to avoid R2DBC's
+        // confusing entity detection logic that tries to UPDATE instead of INSERT
+        return databaseClient.sql(
+                "INSERT INTO traffic_logs (id, timestamp, path, client_ip, status_code, allowed) " +
+                "VALUES (:id, :timestamp, :path, :client_ip, :status_code, :allowed)")
+                .bind("id", UUID.randomUUID())
+                .bind("timestamp", LocalDateTime.now())
+                .bind("path", path)
+                .bind("client_ip", ip)
+                .bind("status_code", status)
+                .bind("allowed", allowed)
+                .then()
+                .onErrorResume(e -> {
+                    // Log but don't fail the request
+                    log.warn("Failed to log traffic: {}", e.getMessage());
+                    return Mono.empty();
+                });
     }
 }
