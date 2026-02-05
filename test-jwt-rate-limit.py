@@ -16,7 +16,7 @@ from typing import Dict, Any
 
 # Configuration
 GATEWAY_BASE_URL = "http://localhost:8080"
-ADMIN_API_URL = f"{GATEWAY_BASE_URL}/api/admin/rules"
+ADMIN_API_URL = f"http://localhost:9090/poormansRateLimit/api/admin/rules"
 TEST_ENDPOINT = f"{GATEWAY_BASE_URL}/httpbin/get"
 
 def create_unsecured_jwt(payload: Dict[str, Any]) -> str:

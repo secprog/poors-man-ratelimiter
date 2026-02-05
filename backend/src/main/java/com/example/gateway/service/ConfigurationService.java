@@ -1,7 +1,7 @@
 package com.example.gateway.service;
 
 import com.example.gateway.model.SystemConfig;
-import com.example.gateway.repository.SystemConfigRepository;
+import com.example.gateway.store.SystemConfigStore;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import jakarta.annotation.PostConstruct;
@@ -12,24 +12,37 @@ import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class ConfigurationService {
-    private final SystemConfigRepository repository;
+    private final SystemConfigStore configStore;
 
     private final Cache<String, String> configCache = Caffeine.newBuilder()
             .expireAfterWrite(Duration.ofMinutes(5))
             .build();
 
+        private static final Map<String, String> DEFAULT_CONFIGS = Map.of(
+            "ip-header-name", "X-Forwarded-For",
+            "trust-x-forwarded-for", "false",
+            "antibot-enabled", "true",
+            "antibot-min-submit-time", "2000",
+            "antibot-honeypot-field", "_hp_email",
+            "session-cookie-name", "JSESSIONID",
+            "antibot-challenge-type", "metarefresh",
+            "antibot-metarefresh-delay", "3",
+            "antibot-preact-difficulty", "1"
+        );
+
     @PostConstruct
     public void init() {
-        refreshCache().subscribe();
+        configStore.putDefaults(DEFAULT_CONFIGS)
+                .then(refreshCache())
+                .subscribe();
     }
 
     public Mono<Void> refreshCache() {
-        return repository.findAll()
+        return configStore.findAll()
                 .doOnNext(config -> configCache.put(config.getConfigKey(), config.getConfigValue()))
                 .then();
     }
@@ -63,15 +76,15 @@ public class ConfigurationService {
     }
 
     public Flux<SystemConfig> getAllConfigs() {
-        return repository.findAll();
+        return configStore.findAll();
     }
 
     public Mono<SystemConfig> updateConfig(String key, String value) {
-        return repository.findById(key)
+        return configStore.findById(key)
                 .defaultIfEmpty(new SystemConfig(key, value))
                 .flatMap(config -> {
                     config.setConfigValue(value);
-                    return repository.save(config);
+                    return configStore.save(config);
                 })
                 .doOnSuccess(c -> configCache.put(c.getConfigKey(), c.getConfigValue()));
     }

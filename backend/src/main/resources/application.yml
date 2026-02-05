@@ -1,17 +1,14 @@
 server:
   port: 8080
+  address: 0.0.0.0
 
 spring:
   application:
     name: gateway-service
-  r2dbc:
-    url: r2dbc:postgresql://postgres:5432/gateway_db
-    username: postgres
-    password: password
-    pool:
-      enabled: true
-      initial-size: 5
-      max-size: 20
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
   cloud:
     gateway:
       routes:
@@ -30,13 +27,13 @@ spring:
       default-filters:
         - name: RequestRateLimiter
           args:
-            rate-limiter: "#{@postgresRateLimiter}"
+            rate-limiter: "#{@redisRateLimiter}"
             key-resolver: "#{@dynamicKeyResolver}"
 
 logging:
   level:
     org.springframework.cloud.gateway: INFO
-    org.springframework.r2dbc: INFO
+    org.springframework.data.redis: INFO
 
 # Rate Limiter Configuration
 rate-limiter:

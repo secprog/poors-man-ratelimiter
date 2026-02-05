@@ -52,9 +52,9 @@ Production-ready API gateway with advanced rate limiting, anti-bot defenses, rea
 
 ## 🛠 Stack
 
-- **Backend**: Spring Boot 3, Spring Cloud Gateway (WebFlux), R2DBC + Postgres, Caffeine caching
+- **Backend**: Spring Boot 3, Spring Cloud Gateway (WebFlux), reactive Redis, Caffeine caching
 - **Frontend**: React 18, Vite, Tailwind CSS, Recharts, Lucide icons, served via Nginx
-- **Database**: PostgreSQL 15 with R2DBC reactive driver
+- **Database**: Redis 7 with reactive driver (AOF persistence)
 - **Infrastructure**: Docker Compose for orchestration, multi-stage builds
 
 ## 🏃 Quick Start
@@ -64,7 +64,7 @@ Production-ready API gateway with advanced rate limiting, anti-bot defenses, rea
 docker compose up --build
 # Frontend (Admin UI): http://localhost:3000
 # Backend API:         http://localhost:8080
-# Postgres:            localhost:5432
+# Redis:               localhost:6379
 ```
 
 ### Development Setup
@@ -338,7 +338,6 @@ python test-gateway.py # Terminal 2
 backend/src/main/java/com/example/gateway/
 ├── GatewayApplication.java          # Spring Boot entry point
 ├── config/
-│   ├── DatabaseConfig.java          # R2DBC connection pool
 │   ├── RateLimiterConfig.java       # Caffeine cache setup
 │   └── WebSocketConfig.java         # WebSocket handler mapping
 ├── controller/
@@ -360,18 +359,19 @@ backend/src/main/java/com/example/gateway/
 │   ├── SystemConfig.java            # Config key-value store
 │   └── TrafficLog.java              # Request log entry
 ├── ratelimit/
-│   └── PostgresRateLimiter.java     # Token bucket implementation
-├── repository/
-│   ├── RateLimitPolicyRepository.java
-│   ├── RateLimitRuleRepository.java
-│   ├── RequestCounterRepository.java
-│   ├── SystemConfigRepository.java
-│   └── TrafficLogRepository.java
+│   └── RedisRateLimiter.java        # Token bucket implementation
+├── store/
+│   ├── RateLimitPolicyStore.java
+│   ├── RateLimitRuleStore.java
+│   ├── RequestCounterStore.java
+│   ├── SystemConfigStore.java
+│   └── TrafficLogStore.java
 ├── service/
 │   ├── AnalyticsService.java        # Stats aggregation + broadcasting
 │   ├── ConfigurationService.java    # Cached config access
 │   ├── PolicyService.java           # Policy business logic
-│   └── RateLimiterService.java      # Queue management + CAS loops
+│   ├── RateLimiterService.java      # Queue management + CAS loops
+│   └── RedisBootstrapService.java   # Default rule/policy seeding
 └── websocket/
     ├── AnalyticsBroadcaster.java    # Flux sink for WebSocket
     └── AnalyticsWebSocketHandler.java # WebSocket connection handler
@@ -452,24 +452,23 @@ docker compose logs frontend | tail -50
 |---------|------|-------------|
 | Frontend | 3000 | Admin UI (Nginx) |
 | Backend | 8080 | API Gateway + Admin API |
-| Postgres | 5432 | Database |
+| Redis | 6379 | Database |
 | Test Server | 9000 | Testing utility |
 
 ### Environment Variables
 ```bash
 # Backend
-SPRING_R2DBC_URL=r2dbc:postgresql://localhost:5432/gateway_db
-SPRING_R2DBC_USERNAME=postgres
-SPRING_R2DBC_PASSWORD=password
+REDIS_HOST=localhost
+REDIS_PORT=6379
 TEST_SERVER_URL=http://localhost:9000
 ```
 
 ### Production Checklist
 - [ ] Set `trust-x-forwarded-for` based on proxy configuration
-- [ ] Use secure database credentials (not `postgres/password`)
+- [ ] Secure Redis access (auth, ACLs, private network)
 - [ ] Configure CORS for your frontend domain
 - [ ] Enable HTTPS with TLS certificates
-- [ ] Set up database backups and monitoring
+- [ ] Set up Redis backups (AOF/RDB) and monitoring
 - [ ] Tune cache sizes in `RateLimiterConfig.java`
 - [ ] Configure log aggregation for `traffic_logs`
 - [ ] Set up health checks and metrics

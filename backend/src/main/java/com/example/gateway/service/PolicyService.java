@@ -1,7 +1,7 @@
 package com.example.gateway.service;
 
 import com.example.gateway.model.RateLimitPolicy;
-import com.example.gateway.repository.RateLimitPolicyRepository;
+import com.example.gateway.store.RateLimitPolicyStore;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.RequiredArgsConstructor;
@@ -15,7 +15,7 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class PolicyService {
-    private final RateLimitPolicyRepository repository;
+    private final RateLimitPolicyStore policyStore;
 
     // Cache all policies to avoid DB hits on every request for matching
     private final Cache<String, List<RateLimitPolicy>> policyCache = Caffeine.newBuilder()
@@ -29,19 +29,19 @@ public class PolicyService {
         if (cached != null) {
             return Flux.fromIterable(cached);
         }
-        return repository.findAll()
+        return policyStore.findAll()
                 .collectList()
                 .doOnNext(policies -> policyCache.put(ALL_POLICIES_KEY, policies))
                 .flatMapMany(Flux::fromIterable);
     }
 
     public Mono<RateLimitPolicy> createPolicy(RateLimitPolicy policy) {
-        return repository.save(policy)
+        return policyStore.save(policy)
                 .doOnSuccess(p -> policyCache.invalidate(ALL_POLICIES_KEY));
     }
 
     public Mono<RateLimitPolicy> updatePolicy(Long id, RateLimitPolicy policy) {
-        return repository.findById(id)
+        return policyStore.findById(id)
                 .flatMap(existing -> {
                     existing.setRoutePattern(policy.getRoutePattern());
                     existing.setLimitType(policy.getLimitType());
@@ -51,13 +51,13 @@ public class PolicyService {
                     existing.setHeaderName(policy.getHeaderName());
                     existing.setSessionCookieName(policy.getSessionCookieName());
                     existing.setTrustProxy(policy.getTrustProxy());
-                    return repository.save(existing);
+                    return policyStore.save(existing);
                 })
                 .doOnSuccess(p -> policyCache.invalidate(ALL_POLICIES_KEY));
     }
 
     public Mono<Void> deletePolicy(Long id) {
-        return repository.deleteById(id)
+        return policyStore.deleteById(id)
                 .doOnSuccess(v -> policyCache.invalidate(ALL_POLICIES_KEY));
     }
 }

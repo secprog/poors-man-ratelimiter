@@ -1,16 +1,24 @@
 package com.example.gateway.service;
 
 import com.example.gateway.dto.AnalyticsUpdate;
+import com.example.gateway.store.RedisKeys;
 import com.example.gateway.websocket.AnalyticsBroadcaster;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.r2dbc.core.DatabaseClient;
+import org.springframework.data.redis.core.ReactiveHashOperations;
+import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
+import org.springframework.data.redis.core.ReactiveZSetOperations;
+import org.springframework.data.domain.Range;
+import org.springframework.data.redis.connection.Limit;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Service
@@ -18,13 +26,25 @@ import java.util.concurrent.atomic.AtomicLong;
 @Slf4j
 public class AnalyticsService {
 
-    private final DatabaseClient databaseClient;
+    private final ReactiveStringRedisTemplate redisTemplate;
     private final AnalyticsBroadcaster broadcaster;
     private final PolicyService policyService;
 
     // In-memory counters for buffering
     private final AtomicLong pendingAllowed = new AtomicLong(0);
     private final AtomicLong pendingBlocked = new AtomicLong(0);
+
+    private static final Duration STATS_RETENTION = Duration.ofDays(7);
+    private static final String ALLOWED_FIELD = "allowed";
+    private static final String BLOCKED_FIELD = "blocked";
+
+    private ReactiveHashOperations<String, String, String> hashOps() {
+        return redisTemplate.opsForHash();
+    }
+
+    private ReactiveZSetOperations<String, String> zsetOps() {
+        return redisTemplate.opsForZSet();
+    }
 
     public void incrementAllowed() {
         pendingAllowed.incrementAndGet();
@@ -45,20 +65,18 @@ public class AnalyticsService {
 
         // Round to nearest minute for aggregation
         Instant now = Instant.now().truncatedTo(ChronoUnit.MINUTES);
+        long minuteBucket = now.getEpochSecond() / 60;
+        String statsKey = RedisKeys.requestStatsKey(minuteBucket);
 
-        databaseClient.sql(
-                "INSERT INTO request_stats (time_window, allowed_count, blocked_count) " +
-                        "VALUES (:time, :allowed, :blocked) " +
-                        "ON CONFLICT (time_window) DO UPDATE SET " +
-                        "allowed_count = request_stats.allowed_count + :allowed, " +
-                        "blocked_count = request_stats.blocked_count + :blocked")
-                .bind("time", now)
-                .bind("allowed", allowed)
-                .bind("blocked", blocked)
-                .then()
-                .subscribe(
-                        null,
-                        error -> log.error("Failed to flush analytics stats", error));
+        Mono.when(
+                hashOps().increment(statsKey, ALLOWED_FIELD, allowed),
+                hashOps().increment(statsKey, BLOCKED_FIELD, blocked),
+                zsetOps().add(RedisKeys.REQUEST_STATS_INDEX, String.valueOf(minuteBucket), minuteBucket),
+                redisTemplate.expire(statsKey, STATS_RETENTION),
+                pruneOldStats(minuteBucket))
+            .subscribe(
+                null,
+                error -> log.error("Failed to flush analytics stats", error));
     }
     
     // Broadcast updates every 2 seconds
@@ -89,34 +107,68 @@ public class AnalyticsService {
     public Mono<StatsSummary> getSummary() {
         // Last 24 hours to match the time series charts
         Instant startTime = Instant.now().minus(24, ChronoUnit.HOURS);
-        
-        return databaseClient.sql(
-                "SELECT SUM(allowed_count) as total_allowed, SUM(blocked_count) as total_blocked " +
-                        "FROM request_stats " +
-                        "WHERE time_window >= :startTime")
-                .bind("startTime", startTime)
-                .map((row, meta) -> new StatsSummary(
-                        row.get("total_allowed", Long.class) != null ? row.get("total_allowed", Long.class) : 0L,
-                        row.get("total_blocked", Long.class) != null ? row.get("total_blocked", Long.class) : 0L))
-                .one()
-                .defaultIfEmpty(new StatsSummary(0L, 0L));
+
+        return getMinuteBuckets(startTime)
+            .flatMapMany(Flux::fromIterable)
+            .flatMap(this::loadBucketTotals)
+            .reduce(new StatsSummary(0L, 0L), (acc, next) ->
+                new StatsSummary(acc.allowed + next.allowed, acc.blocked + next.blocked));
     }
 
     public Mono<java.util.List<TimeSeriesDataPoint>> getTimeSeries(int hours) {
         Instant startTime = Instant.now().minus(hours, ChronoUnit.HOURS);
-        
-        return databaseClient.sql(
-                "SELECT time_window, allowed_count, blocked_count " +
-                        "FROM request_stats " +
-                        "WHERE time_window >= :startTime " +
-                        "ORDER BY time_window ASC")
-                .bind("startTime", startTime)
-                .map((row, meta) -> new TimeSeriesDataPoint(
-                        row.get("time_window", Instant.class),
-                        row.get("allowed_count", Long.class) != null ? row.get("allowed_count", Long.class) : 0L,
-                        row.get("blocked_count", Long.class) != null ? row.get("blocked_count", Long.class) : 0L))
-                .all()
+
+        return getMinuteBuckets(startTime)
+                .flatMapMany(Flux::fromIterable)
+                .flatMap(this::loadBucketPoint)
                 .collectList();
+    }
+
+    private Mono<List<String>> getMinuteBuckets(Instant startTime) {
+        double start = startTime.getEpochSecond() / 60.0;
+        return zsetOps()
+            .rangeByScore(RedisKeys.REQUEST_STATS_INDEX, Range.closed(start, Double.POSITIVE_INFINITY), Limit.unlimited())
+            .collectList();
+    }
+
+    private Mono<StatsSummary> loadBucketTotals(String minuteBucket) {
+        return hashOps()
+                .multiGet(RedisKeys.requestStatsKey(Long.parseLong(minuteBucket)), List.of(ALLOWED_FIELD, BLOCKED_FIELD))
+                .map(values -> new StatsSummary(parseLong(values, 0), parseLong(values, 1)));
+    }
+
+    private Mono<TimeSeriesDataPoint> loadBucketPoint(String minuteBucket) {
+        long minute = Long.parseLong(minuteBucket);
+        Instant timestamp = Instant.ofEpochSecond(minute * 60);
+        return hashOps()
+                .multiGet(RedisKeys.requestStatsKey(minute), List.of(ALLOWED_FIELD, BLOCKED_FIELD))
+                .map(values -> new TimeSeriesDataPoint(timestamp, parseLong(values, 0), parseLong(values, 1)));
+    }
+
+    private long parseLong(List<String> values, int index) {
+        if (values == null || values.size() <= index) {
+            return 0L;
+        }
+        String value = values.get(index);
+        if (value == null) {
+            return 0L;
+        }
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
+    }
+
+    private Mono<Long> pruneOldStats(long currentMinute) {
+        long retentionMinutes = STATS_RETENTION.toMinutes();
+        long minMinute = currentMinute - retentionMinutes;
+        if (minMinute <= 0) {
+            return Mono.just(0L);
+        }
+        return zsetOps().removeRangeByScore(
+            RedisKeys.REQUEST_STATS_INDEX,
+            Range.closed(0.0, (double) (minMinute - 1)));
     }
 
     public record StatsSummary(Long allowed, Long blocked) {

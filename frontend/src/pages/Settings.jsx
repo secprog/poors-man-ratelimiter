@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Save, RefreshCw } from 'lucide-react';
-import api from '../api';
+import adminApi from '../admin-api';
 import { getAntiBotHeaders, getFormToken } from '../utils/formProtection';
 
 export default function Settings() {
@@ -14,7 +14,7 @@ export default function Settings() {
 
     const fetchConfigs = async () => {
         try {
-            const res = await api.get('/config');
+            const res = await adminApi.get('/config');
             const configMap = {};
             res.data.forEach(item => {
                 configMap[item.configKey] = item.configValue;
@@ -36,7 +36,7 @@ export default function Settings() {
             const tokenData = await getFormToken();
             const headers = getAntiBotHeaders(tokenData);
 
-            await api.post(`/config/${key}`, { value }, { headers });
+            await adminApi.post(`/config/${key}`, { value }, { headers });
         } catch (err) {
             console.error(`Failed to update ${key}`, err);
             alert(`Failed to update setting: ${key}`);

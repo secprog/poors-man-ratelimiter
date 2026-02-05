@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, Edit, X, Save, AlertTriangle, ArrowUp, ArrowDown } from 'lucide-react';
-import api from '../api';
+import adminApi from '../admin-api';
 import { getFormToken, getAntiBotHeaders } from '../utils/formProtection';
 
 export default function Policies() {
@@ -44,7 +44,7 @@ export default function Policies() {
 
     const fetchPolicies = async () => {
         try {
-            const res = await api.get('/admin/rules');
+            const res = await adminApi.get('/admin/rules');
             // Sort by priority (lower number = higher priority)
             const sortedPolicies = res.data.sort((a, b) => (a.priority || 0) - (b.priority || 0));
             setPolicies(sortedPolicies);
@@ -61,7 +61,7 @@ export default function Policies() {
             if (!policy) return;
 
             // Update policy with new priority
-            await api.put(`/admin/rules/${policyId}`, {
+            await adminApi.put(`/admin/rules/${policyId}`, {
                 ...policy,
                 priority: newPriority
             });
@@ -206,9 +206,9 @@ export default function Policies() {
 
         try {
             if (editingPolicy) {
-                await api.put(`/admin/rules/${editingPolicy.id}`, payload, { headers });
+                await adminApi.put(`/admin/rules/${editingPolicy.id}`, payload, { headers });
             } else {
-                await api.post('/admin/rules', payload, { headers });
+                await adminApi.post('/admin/rules', payload, { headers });
             }
             closeModal();
             fetchPolicies();
@@ -229,7 +229,7 @@ export default function Policies() {
     const handleDelete = async (policyId) => {
         if (!confirm("Are you sure you want to delete this policy?")) return;
         try {
-            await api.delete(`/admin/rules/${policyId}`);
+            await adminApi.delete(`/admin/rules/${policyId}`);
             fetchPolicies();
         } catch (err) {
             console.error("Failed to delete policy", err);

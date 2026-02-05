@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 
-const API_BASE_URL = 'http://localhost:8080/api';
+const API_BASE_URL = '/api'; // Public form tokens - goes through nginx to port 8080
 
 /**
  * Fetches a new anti-bot token from the backend.

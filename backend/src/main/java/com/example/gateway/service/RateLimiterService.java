@@ -4,9 +4,9 @@ import com.example.gateway.dto.RateLimitResult;
 import com.example.gateway.model.RateLimitRule;
 import com.example.gateway.model.RequestCounter;
 import com.example.gateway.model.TrafficLog;
-import com.example.gateway.repository.RateLimitRuleRepository;
-import com.example.gateway.repository.RequestCounterRepository;
-import com.example.gateway.repository.TrafficLogRepository;
+import com.example.gateway.store.RateLimitRuleStore;
+import com.example.gateway.store.RequestCounterStore;
+import com.example.gateway.store.TrafficLogStore;
 import com.example.gateway.util.BodyFieldExtractor;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -14,7 +14,6 @@ import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpCookie;
-import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Service;
 import org.springframework.util.AntPathMatcher;
 import org.springframework.web.server.ServerWebExchange;
@@ -34,10 +33,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Slf4j
 public class RateLimiterService {
 
-    private final RateLimitRuleRepository ruleRepository;
-    private final RequestCounterRepository counterRepository;
-    private final TrafficLogRepository logRepository;
-    private final DatabaseClient databaseClient;
+    private final RateLimitRuleStore ruleStore;
+    private final RequestCounterStore counterStore;
+    private final TrafficLogStore trafficLogStore;
     private final JwtService jwtService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -65,7 +63,7 @@ public class RateLimiterService {
     }
 
     public Mono<Void> refreshRules() {
-        return ruleRepository.findByActiveTrue()
+        return ruleStore.findByActiveTrue()
                 .collectList()
                 .doOnNext(rules -> {
                     activeRules.clear();
@@ -266,7 +264,7 @@ public class RateLimiterService {
     }
 
     private Mono<RateLimitResult> checkLimit(RateLimitRule rule, String identifier) {
-        return counterRepository.findByRuleIdAndClientIp(rule.getId(), identifier)
+        return counterStore.findByRuleIdAndClientIp(rule.getId(), identifier)
                 .defaultIfEmpty(new RequestCounter(rule.getId(), identifier, 0, LocalDateTime.now()))
                 .flatMap(counter -> {
                     LocalDateTime now = LocalDateTime.now();
@@ -274,12 +272,12 @@ public class RateLimiterService {
 
                     if (now.isAfter(windowEnd)) {
                         // Reset and allow
-                        return updateCounter(rule.getId(), identifier, 1, now)
+                        return updateCounter(rule.getId(), identifier, 1, now, rule.getWindowSeconds())
                                 .thenReturn(new RateLimitResult(true, 0, false));
                     } else {
                         if (counter.getRequestCount() < rule.getAllowedRequests()) {
                             // Increment and allow
-                            return updateCounter(rule.getId(), identifier, counter.getRequestCount() + 1, counter.getWindowStart())
+                            return updateCounter(rule.getId(), identifier, counter.getRequestCount() + 1, counter.getWindowStart(), rule.getWindowSeconds())
                                     .thenReturn(new RateLimitResult(true, 0, false));
                         } else {
                             // Rate limit exceeded
@@ -334,40 +332,20 @@ public class RateLimiterService {
         return Mono.just(new RateLimitResult(true, delayMs, true));
     }
 
-    private Mono<Void> updateCounter(UUID ruleId, String identifier, int newCount, LocalDateTime windowStart) {
-        // Use raw SQL upsert instead of repository.save() to avoid R2DBC's
-        // confusing entity detection logic
-        return databaseClient.sql(
-                "INSERT INTO request_counters (rule_id, client_ip, request_count, window_start) " +
-                "VALUES (:rule_id, :client_ip, :request_count, :window_start) " +
-                "ON CONFLICT (rule_id, client_ip) DO UPDATE SET request_count = :request_count, window_start = :window_start")
-                .bind("rule_id", ruleId)
-                .bind("client_ip", identifier)  // Using 'identifier' which can be IP or JWT claims
-                .bind("request_count", newCount)
-                .bind("window_start", windowStart)
-                .then()
+    private Mono<Void> updateCounter(UUID ruleId, String identifier, int newCount, LocalDateTime windowStart, int windowSeconds) {
+        RequestCounter counter = new RequestCounter(ruleId, identifier, newCount, windowStart);
+        Duration ttl = Duration.ofSeconds(Math.max(1, windowSeconds + 5));
+        return counterStore.save(counter, ttl)
                 .onErrorResume(e -> {
-                    // Log but don't fail the request
                     log.warn("Failed to update counter: {}", e.getMessage());
                     return Mono.empty();
                 });
     }
 
     private Mono<Void> logTraffic(String path, String ip, int status, boolean allowed) {
-        // Use raw SQL INSERT instead of repository.save() to avoid R2DBC's
-        // confusing entity detection logic that tries to UPDATE instead of INSERT
-        return databaseClient.sql(
-                "INSERT INTO traffic_logs (id, timestamp, path, client_ip, status_code, allowed) " +
-                "VALUES (:id, :timestamp, :path, :client_ip, :status_code, :allowed)")
-                .bind("id", UUID.randomUUID())
-                .bind("timestamp", LocalDateTime.now())
-                .bind("path", path)
-                .bind("client_ip", ip)
-                .bind("status_code", status)
-                .bind("allowed", allowed)
-                .then()
+        TrafficLog logEntry = new TrafficLog(UUID.randomUUID(), LocalDateTime.now(), path, ip, status, allowed);
+        return trafficLogStore.append(logEntry)
                 .onErrorResume(e -> {
-                    // Log but don't fail the request
                     log.warn("Failed to log traffic: {}", e.getMessage());
                     return Mono.empty();
                 });

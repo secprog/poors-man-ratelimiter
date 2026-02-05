@@ -1,11 +1,10 @@
 package com.example.gateway.controller;
 
 import com.example.gateway.model.RateLimitRule;
-import com.example.gateway.repository.RateLimitRuleRepository;
 import com.example.gateway.service.RateLimiterService;
+import com.example.gateway.store.RateLimitRuleStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -18,24 +17,23 @@ import java.util.UUID;
 @CrossOrigin(origins = "*")
 @Slf4j
 public class RateLimitRuleController {
-    
-    private final RateLimitRuleRepository ruleRepository;
+
     private final RateLimiterService rateLimiterService;
-    private final R2dbcEntityTemplate r2dbcEntityTemplate;
+    private final RateLimitRuleStore ruleStore;
 
     @GetMapping
     public Flux<RateLimitRule> getAllRules() {
-        return ruleRepository.findAll();
+        return ruleStore.findAll();
     }
 
     @GetMapping("/active")
     public Flux<RateLimitRule> getActiveRules() {
-        return ruleRepository.findByActiveTrue();
+        return ruleStore.findByActiveTrue();
     }
 
     @GetMapping("/{id}")
     public Mono<RateLimitRule> getRuleById(@PathVariable UUID id) {
-        return ruleRepository.findById(id);
+        return ruleStore.findById(id);
     }
 
     @PostMapping
@@ -43,8 +41,7 @@ public class RateLimitRuleController {
         if (rule.getId() == null) {
             rule.setId(UUID.randomUUID());
         }
-        return r2dbcEntityTemplate.insert(RateLimitRule.class)
-                .using(rule)
+        return ruleStore.save(rule)
                 .doOnSuccess(saved -> {
                     log.info("Created new rate limit rule: {}", saved);
                     rateLimiterService.refreshRules().subscribe();
@@ -53,10 +50,10 @@ public class RateLimitRuleController {
 
     @PutMapping("/{id}")
     public Mono<RateLimitRule> updateRule(@PathVariable UUID id, @RequestBody RateLimitRule rule) {
-        return ruleRepository.findById(id)
+        return ruleStore.findById(id)
                 .flatMap(existing -> {
                     rule.setId(id);
-                    return ruleRepository.save(rule)
+                    return ruleStore.save(rule)
                             .doOnSuccess(updated -> {
                                 log.info("Updated rate limit rule: {}", updated);
                                 rateLimiterService.refreshRules().subscribe();
@@ -69,13 +66,13 @@ public class RateLimitRuleController {
             @PathVariable UUID id,
             @RequestBody QueueConfig queueConfig) {
         
-        return ruleRepository.findById(id)
+        return ruleStore.findById(id)
                 .flatMap(rule -> {
                     rule.setQueueEnabled(queueConfig.queueEnabled);
                     rule.setMaxQueueSize(queueConfig.maxQueueSize);
                     rule.setDelayPerRequestMs(queueConfig.delayPerRequestMs);
                     
-                    return ruleRepository.save(rule)
+                    return ruleStore.save(rule)
                             .doOnSuccess(updated -> {
                                 log.info("Updated queue settings for rule {}: enabled={}, maxSize={}, delayMs={}", 
                                         id, queueConfig.queueEnabled, queueConfig.maxQueueSize, queueConfig.delayPerRequestMs);
@@ -86,7 +83,7 @@ public class RateLimitRuleController {
 
     @DeleteMapping("/{id}")
     public Mono<Void> deleteRule(@PathVariable UUID id) {
-        return ruleRepository.deleteById(id)
+        return ruleStore.deleteById(id)
                 .doOnSuccess(v -> {
                     log.info("Deleted rate limit rule: {}", id);
                     rateLimiterService.refreshRules().subscribe();
@@ -104,13 +101,13 @@ public class RateLimitRuleController {
             @PathVariable UUID id,
             @RequestBody BodyLimitConfig bodyLimitConfig) {
         
-        return ruleRepository.findById(id)
+        return ruleStore.findById(id)
                 .flatMap(rule -> {
                     rule.setBodyLimitEnabled(bodyLimitConfig.bodyLimitEnabled);
                     rule.setBodyFieldPath(bodyLimitConfig.bodyFieldPath);
                     rule.setBodyLimitType(bodyLimitConfig.bodyLimitType);
                     
-                    return ruleRepository.save(rule)
+                return ruleStore.save(rule)
                             .doOnSuccess(updated -> {
                                 log.info("Updated body limit settings for rule {}: enabled={}, fieldPath={}, type={}", 
                                         id, bodyLimitConfig.bodyLimitEnabled, bodyLimitConfig.bodyFieldPath, 

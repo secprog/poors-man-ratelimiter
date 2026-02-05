@@ -162,7 +162,7 @@ def test_rate_limiting():
 def get_form_token() -> Optional[Dict[str, Any]]:
     """Get a form token from the gateway"""
     try:
-        response = requests.get(f"{GATEWAY_URL}/api/tokens/form", timeout=5)
+        response = requests.get(f"http://localhost:8080/api/tokens/form", timeout=5)
         if response.status_code == 200:
             return response.json()
         else:
@@ -176,7 +176,7 @@ def get_form_token() -> Optional[Dict[str, Any]]:
 def reset_to_default_rate_limit():
     """Reset rate limit rule to default configuration"""
     try:
-        admin_url = f"{GATEWAY_URL}/api/admin/rules"
+        admin_url = f"http://localhost:9090/poormansRateLimit/api/admin/rules"
         response = requests.get(admin_url, timeout=10)
         
         if response.status_code != 200:
@@ -494,7 +494,7 @@ def test_meta_refresh_challenge():
     
     try:
         print_info("Requesting meta refresh challenge...")
-        response = requests.get(f"{GATEWAY_URL}/api/tokens/challenge", timeout=10)
+        response = requests.get(f"http://localhost:8080/api/tokens/challenge", timeout=10)
         
         if response.status_code == 200:
             content_type = response.headers.get('Content-Type', '')
@@ -1036,7 +1036,7 @@ def test_queueing_configuration():
     print_header("TEST 22: Queueing Configuration")
     
     try:
-        admin_url = f"{GATEWAY_URL}/api/admin/rules"
+        admin_url = f"http://localhost:9090/poormansRateLimit/api/admin/rules"
         
         # Get existing rules
         response = requests.get(admin_url, timeout=10)
@@ -1097,7 +1097,7 @@ def test_queueing_behavior():
     print_header("TEST 23: Queueing Behavior")
     
     try:
-        admin_url = f"{GATEWAY_URL}/api/admin/rules"
+        admin_url = f"http://localhost:9090/poormansRateLimit/api/admin/rules"
         
         # Get rule and configure for tight rate limit
         response = requests.get(admin_url, timeout=10)
@@ -1175,7 +1175,7 @@ def test_queueing_delay_timing():
     print_header("TEST 24: Queueing Delay Timing")
     
     try:
-        admin_url = f"{GATEWAY_URL}/api/admin/rules"
+        admin_url = f"http://localhost:9090/poormansRateLimit/api/admin/rules"
         
         # Get rule and configure for measurable delays
         response = requests.get(admin_url, timeout=10)
@@ -1246,7 +1246,7 @@ def test_queueing_disabled_reverts_to_rejection():
         print_warning("Could not reset rate limit rule")
     
     try:
-        admin_url = f"{GATEWAY_URL}/api/admin/rules"
+        admin_url = f"http://localhost:9090/poormansRateLimit/api/admin/rules"
         
         # Get rule and disable queueing
         response = requests.get(admin_url, timeout=10)

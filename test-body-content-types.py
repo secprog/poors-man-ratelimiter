@@ -9,7 +9,7 @@ import json
 import time
 
 BASE_URL = "http://localhost:8080"
-API_URL = f"{BASE_URL}/api/admin/rules"
+API_URL = f"http://localhost:9090/poormansRateLimit/api/admin/rules"
 TEST_PATH = "/test/api/echo"
 
 def create_body_rate_limit_rule(field_path, content_type):
