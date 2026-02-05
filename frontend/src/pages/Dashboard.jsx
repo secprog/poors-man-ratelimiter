@@ -48,8 +48,11 @@ export default function Dashboard() {
                     const lastBucket = buckets[buckets.length - 1];
 
                     if (lastBucket && lastBucket.timestamp === bucketTimestamp) {
-                        lastBucket.allowed += deltaAllowed;
-                        lastBucket.blocked += deltaBlocked;
+                        buckets[buckets.length - 1] = {
+                            ...lastBucket,
+                            allowed: lastBucket.allowed + deltaAllowed,
+                            blocked: lastBucket.blocked + deltaBlocked
+                        };
                     } else {
                         buckets.push({
                             timestamp: bucketTimestamp,

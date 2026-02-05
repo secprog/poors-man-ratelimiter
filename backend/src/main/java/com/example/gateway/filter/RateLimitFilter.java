@@ -1,5 +1,6 @@
 package com.example.gateway.filter;
 
+import com.example.gateway.service.AnalyticsService;
 import com.example.gateway.service.JwtService;
 import com.example.gateway.service.RateLimiterService;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +24,7 @@ import java.time.Duration;
 public class RateLimitFilter implements GlobalFilter, Ordered {
 
     private final RateLimiterService rateLimiterService;
+    private final AnalyticsService analyticsService;
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
@@ -70,6 +72,7 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
         return rateLimiterService.isAllowed(exchange, path, ip, authHeader, cachedBody)
                 .flatMap(result -> {
                     if (!result.isAllowed()) {
+                        analyticsService.incrementBlocked();
                         exchange.getResponse().setStatusCode(HttpStatus.TOO_MANY_REQUESTS);
                         if (result.isQueued()) {
                             exchange.getResponse().getHeaders().add("X-RateLimit-Queued", "true");
@@ -77,6 +80,7 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
                         return exchange.getResponse().setComplete();
                     }
 
+                    analyticsService.incrementAllowed();
                     if (result.isQueued() && result.getDelayMs() > 0) {
                         log.debug("Delaying request by {}ms for rate limiting", result.getDelayMs());
                         return Mono.delay(Duration.ofMillis(result.getDelayMs()))

@@ -14,7 +14,7 @@ export default function Settings() {
 
     const fetchConfigs = async () => {
         try {
-            const res = await adminApi.get('/config');
+            const res = await adminApi.get('/admin/config');
             const configMap = {};
             res.data.forEach(item => {
                 configMap[item.configKey] = item.configValue;
