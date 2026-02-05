@@ -53,6 +53,15 @@ public class ConfigurationService {
         }
     }
 
+    public int getInt(String key, int defaultValue) {
+        String value = getConfig(key, String.valueOf(defaultValue));
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
+    }
+
     public Flux<SystemConfig> getAllConfigs() {
         return repository.findAll();
     }

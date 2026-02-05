@@ -167,9 +167,48 @@ def get_form_token() -> Optional[Dict[str, Any]]:
         return None
 
 
+def reset_to_default_rate_limit():
+    """Reset rate limit rule to default configuration"""
+    try:
+        admin_url = f"{GATEWAY_URL}/api/admin/rules"
+        response = requests.get(admin_url, timeout=10)
+        
+        if response.status_code != 200:
+            return False
+        
+        rules = response.json()
+        if not rules:
+            return False
+        
+        rule = rules[0].copy()
+        rule_id = rule.get('id')
+        
+        # Reset to safe defaults: 100 requests per 60 seconds, queueing disabled
+        rule.update({
+            "allowedRequests": 100,
+            "windowSeconds": 60,
+            "queueEnabled": False,
+            "maxQueueSize": 0,
+            "delayPerRequestMs": 0
+        })
+        
+        response = requests.put(f"{admin_url}/{rule_id}", json=rule, timeout=10)
+        if response.status_code == 200:
+            time.sleep(1.5)  # Wait for rule reload
+            return True
+        
+        return False
+    except Exception:
+        return False
+
+
 def test_antibot_valid_submission():
     """Test anti-bot protection with valid submission"""
     print_header("TEST 5: Anti-Bot Protection - Valid Submission")
+    
+    # Reset to defaults first (in case previous tests modified the rule)
+    if not reset_to_default_rate_limit():
+        print_warning("Could not reset rate limit rule")
     
     # Get a form token
     token_data = get_form_token()
@@ -306,6 +345,9 @@ def test_antibot_timing_check():
 def test_antibot_token_reuse():
     """Test anti-bot token reuse prevention"""
     print_header("TEST 8: Anti-Bot Protection - Token Reuse Prevention")
+    
+    if not reset_to_default_rate_limit():
+        print_warning("Could not reset rate limit rule")
     
     token_data = get_form_token()
     if not token_data:
@@ -729,6 +771,10 @@ def test_special_characters():
     """Test with special characters in data"""
     print_header("TEST 17: Special Characters Handling")
     
+    # Reset to defaults first (in case previous tests modified the rule)
+    if not reset_to_default_rate_limit():
+        print_warning("Could not reset rate limit rule")
+    
     token_data = get_form_token()
     if not token_data:
         print_failure("Could not get form token")
@@ -1081,6 +1127,9 @@ def test_queueing_disabled_reverts_to_rejection():
     """Test that disabling queueing reverts to normal rejection behavior"""
     print_header("TEST 24: Disable Queueing")
     
+    if not reset_to_default_rate_limit():
+        print_warning("Could not reset rate limit rule")
+    
     try:
         admin_url = f"{GATEWAY_URL}/api/admin/rules"
         
@@ -1102,7 +1151,7 @@ def test_queueing_disabled_reverts_to_rejection():
         if response.status_code != 200:
             return False
         
-        time.sleep(2)  # Wait for rule reload and counter expiry
+        time.sleep(12)  # Wait for rate limit window to expire completely and counter to reset
         print_info("Queueing disabled, limit 3 per 10 seconds")
         
         # Send 6 rapid requests - should get 3 allowed, 3 rejected

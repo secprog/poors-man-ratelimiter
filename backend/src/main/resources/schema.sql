@@ -43,7 +43,8 @@ INSERT INTO system_config (config_key, config_value) VALUES
 ('antibot-honeypot-field', '_hp_email'),
 ('session-cookie-name', 'JSESSIONID'),
 ('antibot-challenge-type', 'metarefresh'),
-('antibot-metarefresh-delay', '3')
+('antibot-metarefresh-delay', '3'),
+('antibot-preact-difficulty', '1')
 ON CONFLICT DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS request_stats (

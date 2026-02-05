@@ -1,28 +1,343 @@
-# Project Guidelines
+# Rate Limiter Gateway - Development Guidelines
+
+## Project Overview
+Production-ready API gateway with advanced rate limiting (token bucket + leaky bucket), anti-bot defenses, real-time WebSocket analytics, and comprehensive admin UI.
 
 ## Code Style
-- Backend is Spring Boot + WebFlux; prefer reactive flows and avoid blocking in request paths.
-- Frontend is React + Vite with page components in [frontend/src/pages](frontend/src/pages).
+
+### Backend (Spring Boot 3 + WebFlux)
+- **Always use reactive flows** (`Mono`, `Flux`) - avoid blocking operations in request paths
+- Use **R2DBC** for database access (reactive), never JDBC
+- Leverage **Caffeine cache** for tokens, counters, and frequently accessed data
+- Apply **`@CrossOrigin`** on controllers for API endpoints
+- Use **Lombok** annotations (`@RequiredArgsConstructor`, `@Slf4j`, `@Data`) to reduce boilerplate
+- Log at appropriate levels: `debug` for detailed tracing, `info` for key events, `error` for failures
+
+### Frontend (React 18 + Vite)
+- **Functional components** with hooks (`useState`, `useEffect`, `useMemo`)
+- **Tailwind CSS** for styling (utility-first approach)
+- **Lucide React** for icons (`import { IconName } from 'lucide-react'`)
+- **Recharts** for data visualization
+- Centralize API calls in [frontend/src/api.js](frontend/src/api.js) (Axios instance)
+- WebSocket connections use [frontend/src/utils/websocket.js](frontend/src/utils/websocket.js) wrapper
 
 ## Architecture
-- Gateway core is Spring Cloud Gateway with rate limiting and anti-bot filters under [backend/src/main/java/com/example/gateway/filter](backend/src/main/java/com/example/gateway/filter).
-- Rate limiting uses a Postgres-backed limiter in [backend/src/main/java/com/example/gateway/ratelimit](backend/src/main/java/com/example/gateway/ratelimit) and config in [backend/src/main/resources/application.yml](backend/src/main/resources/application.yml).
-- Admin/config/analytics controllers are in [backend/src/main/java/com/example/gateway/controller](backend/src/main/java/com/example/gateway/controller).
+
+### Backend Structure
+
+#### Filters (Spring Cloud Gateway)
+- **[RateLimitFilter.java](backend/src/main/java/com/example/gateway/filter/RateLimitFilter.java)**: 
+  - Token bucket + leaky bucket (queueing) enforcement
+  - Handles `RateLimitResult` from `RateLimiterService`
+  - Applies delays using `Mono.delay()` for queued requests
+  - Adds headers: `X-RateLimit-Queued`, `X-RateLimit-Delay-Ms`
+  - Order: `-1` (high priority, before routing)
+
+- **[AntiBotFilter.java](backend/src/main/java/com/example/gateway/filter/AntiBotFilter.java)**:
+  - Validates honeypot fields, time-to-submit, form tokens, idempotency keys
+  - Uses Caffeine caches for token tracking (10min expiry)
+  - Only applies to POST/PUT/PATCH requests
+  - Order: `-100` (very early in filter chain)
+
+#### Services
+- **[RateLimiterService.java](backend/src/main/java/com/example/gateway/service/RateLimiterService.java)**:
+  - Core rate limiting logic with `isAllowed(path, ip)` returning `RateLimitResult`
+  - Queue management with atomic `ConcurrentHashMap<String, AtomicInteger>` for depth tracking
+  - CAS (Compare-And-Set) loops ensure thread-safe queue operations
+  - Background cleanup task every 60 seconds removes stale queue entries
+  - Returns: `RateLimitResult(allowed, delayMs, queued)`
+
+- **[ConfigurationService.java](backend/src/main/java/com/example/gateway/service/ConfigurationService.java)**:
+  - Cached access to `system_config` table
+  - Methods: `getString()`, `getInt()`, `getBoolean()` with defaults
+  - Used by filters and services for runtime configuration
+
+- **[AnalyticsService.java](backend/src/main/java/com/example/gateway/service/AnalyticsService.java)**:
+  - Tracks allowed/blocked request counts
+  - Logs traffic to `traffic_logs` table via raw SQL INSERT (to avoid R2DBC UPDATE errors)
+  - Broadcasts updates via `AnalyticsBroadcaster` for WebSocket clients
+
+#### Controllers
+All controllers in [backend/src/main/java/com/example/gateway/controller](backend/src/main/java/com/example/gateway/controller):
+
+- **[RateLimitRuleController.java](backend/src/main/java/com/example/gateway/controller/RateLimitRuleController.java)** (`/api/admin/rules`):
+  - CRUD for rate limit rules
+  - **`PATCH /{id}/queue`**: Update only queue settings (queueEnabled, maxQueueSize, delayPerRequestMs)
+  - `POST /refresh`: Manually trigger rule cache reload
+
+- **[TokenController.java](backend/src/main/java/com/example/gateway/controller/TokenController.java)** (`/api/tokens`):
+  - `GET /form`: Issue form protection token
+  - `GET /challenge`: Serve challenge page (meta refresh, JavaScript, or Preact)
+  - Challenge type determined by `antibot-challenge-type` config
+
+- **[SystemConfigController.java](backend/src/main/java/com/example/gateway/controller/SystemConfigController.java)** (`/api/config`):
+  - `GET /`: List all configs
+  - `POST /{key}`: Update single config value
+
+- **[AnalyticsController.java](backend/src/main/java/com/example/gateway/controller/AnalyticsController.java)** (`/api/analytics`):
+  - `GET /summary`: Current stats (allowed, blocked, activePolicies)
+  - `GET /timeseries`: Historical data for charts
+
+#### WebSocket
+- **[AnalyticsWebSocketHandler.java](backend/src/main/java/com/example/gateway/websocket/AnalyticsWebSocketHandler.java)**: 
+  - Endpoint: `/ws/analytics`
+  - Sends real-time updates using `AnalyticsBroadcaster.getUpdates()` Flux
+
+- **[AnalyticsBroadcaster.java](backend/src/main/java/com/example/gateway/websocket/AnalyticsBroadcaster.java)**:
+  - Thread-safe Flux sink for broadcasting `AnalyticsUpdate` messages
+
+#### Database Layer
+- **R2DBC**: All repositories extend `ReactiveCrudRepository`
+- **Traffic logging**: Uses raw SQL `INSERT` in `AnalyticsService` to avoid UPDATE errors
+- **Schema**: [backend/src/main/resources/schema.sql](backend/src/main/resources/schema.sql)
+  - Tables: `rate_limit_policies`, `rate_limit_rules`, `system_config`, `traffic_logs`, `request_counters`, etc.
+  - Queue fields in `rate_limit_rules`: `queue_enabled`, `max_queue_size`, `delay_per_request_ms`
+
+### Frontend Structure
+
+#### Pages
+- **[Dashboard.jsx](frontend/src/pages/Dashboard.jsx)**:
+  - Real-time stats from WebSocket + initial REST API load
+  - Shows connection indicator (green dot with "Real-time")
+  - Cards: Total Policies, Requests Allowed, Requests Blocked
+
+- **[Analytics.jsx](frontend/src/pages/Analytics.jsx)**:
+  - Recharts `LineChart` for time series data
+  - Fetches `/api/analytics/timeseries`
+
+- **[Policies.jsx](frontend/src/pages/Policies.jsx)**:
+  - CRUD for rate limit rules
+  - Queue settings UI (toggle, max size slider, delay input)
+  - Uses `getFormToken()` and `getAntiBotHeaders()` for protected requests
+
+- **[Settings.jsx](frontend/src/pages/Settings.jsx)**:
+  - System config UI with grouped sections
+  - Challenge type dropdown: `metarefresh`, `javascript`, `preact`
+  - Difficulty/delay sliders for challenges
+  - Save all or individual updates
+
+#### Utils
+- **[api.js](frontend/src/api.js)**: Axios instance with `baseURL: '/api'` (proxied by Nginx)
+- **[formProtection.js](frontend/src/utils/formProtection.js)**: Anti-bot helpers
+  - `getFormToken()`: Fetch token from `/api/tokens/form`
+  - `getAntiBotHeaders(tokenData)`: Generate required headers
+- **[websocket.js](frontend/src/utils/websocket.js)**: WebSocket client wrapper
+  - Auto-reconnect logic
+  - Subscribe/unsubscribe pattern
 
 ## Build and Test
-- Backend build: `mvn clean package -DskipTests` (used by [backend/Dockerfile](backend/Dockerfile)).
-- Frontend dev: `npm run dev` and build: `npm run build` (see [frontend/package.json](frontend/package.json)).
-- Docker compose: `docker compose up --build` (see [docker-compose.yml](docker-compose.yml)).
 
-## Project Conventions
-- API requests from the frontend are centralized in [frontend/src/api.js](frontend/src/api.js).
-- Token-based anti-bot flow uses `/api/tokens/form` and helpers in [frontend/src/utils/formProtection.js](frontend/src/utils/formProtection.js).
+### Docker (Primary Method)
+```bash
+docker compose up --build           # Full stack
+docker compose logs backend -f      # Tail backend logs
+docker compose down -v              # Clean shutdown with volume removal
+```
+
+### Local Development
+```bash
+# Backend (requires Java 17+, Maven)
+cd backend
+mvn clean package -DskipTests
+java -jar target/*.jar
+
+# Frontend (requires Node 18+)
+cd frontend
+npm install
+npm run dev  # Vite dev server on port 5173
+npm run build  # Production build to dist/
+```
+
+### Testing
+```bash
+# Automated test suite (24 tests)
+python run-tests.py             # Cross-platform
+.\\Run-Tests.ps1                # Windows PowerShell
+
+# Manual testing
+python test-server.py           # Terminal 1
+python test-gateway.py          # Terminal 2
+```
+
+## Key Features & Implementation Details
+
+### Rate Limiting Modes
+
+#### Token Bucket (Immediate Rejection)
+- Configured with `queueEnabled: false`
+- Rejects excess requests with 429 status
+- Implementation: `RateLimiterService.isAllowed()` checks counter in `request_counters` table
+
+#### Leaky Bucket (Request Queueing)
+- Configured with `queueEnabled: true`, `maxQueueSize`, `delayPerRequestMs`
+- Delays excess requests instead of rejecting
+- Queue depth tracked atomically per rule+IP
+- CAS loop ensures no race conditions: `queueDepth.compareAndSet(current, current+1)`
+- Background cleanup every 60s removes zero-depth entries
+- Response headers: `X-RateLimit-Queued: true`, `X-RateLimit-Delay-Ms: <ms>`
+
+### Anti-Bot Protection
+
+#### Form Token Flow
+1. Client: `GET /api/tokens/form` → receives `{token, timestamp}`
+2. Client: Submits form with headers:
+   - `X-Form-Token`: UUID token
+   - `X-Time-To-Submit`: Milliseconds elapsed
+   - `X-Idempotency-Key`: Optional duplicate prevention
+   - Honeypot field: Must be empty
+3. Server validates in `AntiBotFilter`:
+   - Token exists in cache (10min TTL)
+   - Token not already used (15min blacklist)
+   - Time-to-submit > configured minimum (default: 2000ms)
+   - Honeypot field matches configured name and is empty
+   - Idempotency key not seen (1hour TTL)
+
+#### Challenge Types
+Configured via `antibot-challenge-type` in `system_config`:
+
+- **`metarefresh`**: HTML meta tag with `http-equiv="refresh"` (no JavaScript required)
+  - Delay: `antibot-metarefresh-delay` seconds
+  - Use case: Accessibility, no-JS clients
+
+- **`javascript`**: Client-side token generation
+  - Validates token on POST request
+  - Use case: Modern web applications
+
+- **`preact`**: Lightweight React alternative
+  - Sets `X-Form-Token-Challenge` cookie after delay
+  - Auto-reload after `antibot-preact-difficulty` seconds
+  - Use case: Progressive enhancement
+
+### Real-time Analytics
+
+#### WebSocket Flow
+1. Frontend connects to `ws://backend:8080/ws/analytics`
+2. `AnalyticsWebSocketHandler` subscribes to `AnalyticsBroadcaster.getUpdates()`
+3. `AnalyticsService` calls `broadcaster.broadcast(update)` on each request
+4. All connected clients receive `{requestsAllowed, requestsBlocked, activePolicies}` JSON
+
+#### Traffic Logging
+- Every request logged to `traffic_logs` table: `(id, timestamp, path, client_ip, status_code, allowed)`
+- Uses raw SQL INSERT to avoid R2DBC save() UPDATE errors
+- Queried for time series analytics in `AnalyticsController.getTimeSeries()`
 
 ## Integration Points
-- Nginx in the frontend container proxies `/api/` to the backend; see [frontend/nginx.conf](frontend/nginx.conf).
-- Gateway routes include a default `/httpbin/**` proxy target in [backend/src/main/resources/application.yml](backend/src/main/resources/application.yml).
 
-## Security
-- `trust-x-forwarded-for` is a sensitive setting in [backend/src/main/resources/application.yml](backend/src/main/resources/application.yml).
-- CORS is configured at the controller level; see [backend/src/main/java/com/example/gateway/controller](backend/src/main/java/com/example/gateway/controller).
-- Postgres credentials are defined in [backend/src/main/resources/application.yml](backend/src/main/resources/application.yml) and [docker-compose.yml](docker-compose.yml).
+### Nginx Proxy (Frontend Container)
+- Config: [frontend/nginx.conf](frontend/nginx.conf)
+- Routes `/api/**` → `http://backend:8080/api/`
+- Routes `/ws/**` → `http://backend:8080/ws/` (WebSocket)
+- Serves static files from `/usr/share/nginx/html` (Vite build output)
+
+### Gateway Routing
+- Config: [backend/src/main/resources/application.yml](backend/src/main/resources/application.yml)
+- Default route: `/httpbin/**` → `https://httpbin.org/` (for testing)
+- Filters applied globally via `RateLimitFilter` and `AntiBotFilter`
+
+### Database Connection
+- R2DBC URL: `r2dbc:postgresql://postgres:5432/gateway_db`
+- Credentials: `postgres/password` (change in production!)
+- Schema init: [backend/src/main/resources/schema.sql](backend/src/main/resources/schema.sql) auto-applied on first run
+
+## Security Considerations
+
+### Sensitive Settings
+- **`trust-x-forwarded-for`**: ONLY set to `true` behind trusted reverse proxy (default: `false`)
+  - False: Use direct connection IP
+  - True: Trust `X-Forwarded-For` header (opens IP spoofing vector)
+  
+- **`ip-header-name`**: Header to extract client IP from (default: `X-Forwarded-For`)
+
+### CORS
+- Controllers have `@CrossOrigin` for development convenience
+- Production: Configure specific origins, not `*`
+
+### Credentials
+- Postgres: Change `postgres/password` in [docker-compose.yml](docker-compose.yml) and [application.yml](backend/src/main/resources/application.yml)
+- Token secrets: Currently none (use UUIDs). Add HMAC/JWT signing in production.
+
+## Common Tasks
+
+### Adding a New Rate Limit Rule
+1. **Via UI**: Policies page → Create button
+2. **Via API**: `POST /api/admin/rules` with JSON body
+3. **Via SQL**: INSERT into `rate_limit_rules` table, then `POST /api/admin/rules/refresh`
+
+### Enabling Queueing on Existing Rule
+```bash
+curl -X PATCH http://localhost:8080/api/admin/rules/{rule-id}/queue \\
+  -H "Content-Type: application/json" \\
+  -d '{"queueEnabled":true,"maxQueueSize":10,"delayPerRequestMs":500}'
+```
+
+### Adding New System Config
+1. Insert into `system_config` table: `INSERT INTO system_config (config_key, config_value) VALUES ('my-key', 'my-value')`
+2. Access in code: `configService.getString("my-key", "default-value")`
+3. Expose in Settings UI: Add form field in [Settings.jsx](frontend/src/pages/Settings.jsx)
+
+### Adding New Challenge Type
+1. Add case in [TokenController.java](backend/src/main/java/com/example/gateway/controller/TokenController.java) `getChallenge()`
+2. Return custom HTML with challenge logic
+3. Update Settings UI dropdown in [Settings.jsx](frontend/src/pages/Settings.jsx)
+
+### Debugging Rate Limit Issues
+1. Check logs: `docker compose logs backend | grep -i "rate"`
+2. Query counters: `SELECT * FROM request_counters WHERE client_ip = '<IP>';`
+3. Verify rule active: `SELECT * FROM rate_limit_rules WHERE active = true;`
+4. Check queue depth in logs: Look for "Delaying request" messages
+
+## Performance Tuning
+
+### Caffeine Cache Sizes
+In [RateLimiterConfig.java](backend/src/main/java/com/example/gateway/config/RateLimiterConfig.java) or `AntiBotFilter.java`:
+- `validTokens`: 100,000 entries (10min expiry)
+- `usedTokens`: 100,000 entries (15min expiry)
+- `idempotencyKeys`: 100,000 entries (1hour expiry)
+
+Increase for high-traffic scenarios, monitor memory usage.
+
+### Database Connection Pool
+In [application.yml](backend/src/main/resources/application.yml):
+```yaml
+spring:
+  r2dbc:
+    pool:
+      initial-size: 10
+      max-size: 20
+```
+
+### Queue Cleanup Frequency
+In [RateLimiterService.java](backend/src/main/java/com/example/gateway/service/RateLimiterService.java):
+- Currently: `@Scheduled(fixedRate = 60000)` (60 seconds)
+- Decrease for faster memory reclamation, increase to reduce overhead
+
+## Documentation Files
+- **[README.md](README.md)**: User-facing documentation
+- **[QUEUEING_IMPLEMENTATION.md](QUEUEING_IMPLEMENTATION.md)**: Leaky bucket technical deep-dive
+- **[AUTOMATED_QUEUEING_TESTS.md](AUTOMATED_QUEUEING_TESTS.md)**: Test specifications for queueing feature
+- **[CODEBASE_OVERVIEW.md](CODEBASE_OVERVIEW.md)**: Architectural summary
+- **[TEST-README.md](TEST-README.md)**: Testing instructions
+
+## Troubleshooting
+
+### Backend Won't Start
+- Check Postgres connection: `docker compose logs postgres`
+- Verify schema applied: `docker exec -it <postgres-container> psql -U postgres -d gateway_db -c "\\dt"`
+
+### Frontend 502 Bad Gateway
+- Backend not ready: `docker compose logs backend` for startup errors
+- Nginx config issue: Check [nginx.conf](frontend/nginx.conf) proxy_pass URLs
+
+### WebSocket Not Connecting
+- Ensure `/ws/analytics` is proxied in Nginx (not just `/api/`)
+- Check browser console for connection errors
+- Verify `WebSocketConfig` registered in Spring Boot
+
+### Rate Limits Not Enforcing
+- Check rule active: `SELECT * FROM rate_limit_rules WHERE path_pattern = '<pattern>';`
+- Refresh cache: `POST http://localhost:8080/api/admin/rules/refresh`
+- Verify IP extraction: Log `clientIp` in `RateLimitFilter`
+
+### Tests Failing
+- Run `docker compose up` in separate terminal before `python test-gateway.py`
+- Check test server: `curl http://localhost:9000/test-endpoint`

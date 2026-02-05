@@ -179,6 +179,7 @@ export default function Settings() {
                                 >
                                     <option value="metarefresh">Meta Refresh (No JavaScript)</option>
                                     <option value="javascript">JavaScript (Deferred)</option>
+                                    <option value="preact">Preact Challenge (Light JS)</option>
                                 </select>
                                 <p className="text-xs text-gray-500 mt-1">Choose the challenge method for suspicious requests.</p>
                             </div>
@@ -195,6 +196,21 @@ export default function Settings() {
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
                                     />
                                     <p className="text-xs text-gray-500 mt-1">Delay before page auto-refresh. 1-30 seconds recommended.</p>
+                                </div>
+                            )}
+
+                            {configs['antibot-challenge-type'] === 'preact' && (
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Preact Difficulty (seconds)</label>
+                                    <input
+                                        type="number"
+                                        value={configs['antibot-preact-difficulty'] || '1'}
+                                        onChange={(e) => handleChange('antibot-preact-difficulty', e.target.value)}
+                                        min="1"
+                                        max="10"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">Seconds to wait before browser is refreshed after token is set.</p>
                                 </div>
                             )}
                         </div>

@@ -51,6 +51,8 @@ public class TokenController {
         
         if ("metarefresh".equalsIgnoreCase(challengeType)) {
             return generateMetaRefreshChallenge(exchange);
+        } else if ("preact".equalsIgnoreCase(challengeType)) {
+            return generatePreactChallenge(exchange);
         } else {
             // Default: return token for JavaScript challenge
             return generateTokenChallenge();
@@ -98,6 +100,82 @@ public class TokenController {
                 .maxAge(600) // 10 minutes
                 .build());
         
+        return Mono.just(org.springframework.http.ResponseEntity.ok()
+                .contentType(MediaType.TEXT_HTML)
+                .body(html));
+    }
+
+    /**
+     * Generate a lightweight Preact-based JavaScript challenge.
+     * The client must execute JavaScript, set the issued token cookie, and then reload.
+     */
+    private Mono<org.springframework.http.ResponseEntity<String>> generatePreactChallenge(ServerWebExchange exchange) {
+        String token = antiBotFilter.generateFormToken();
+        long delaySeconds = Math.max(1, configService.getLong("antibot-preact-difficulty", 1));
+        String redirectPath = exchange.getRequest().getURI().getPath();
+
+        String html = """
+                <!DOCTYPE html>
+                <html lang=\"en\">
+                <head>
+                  <meta charset=\"UTF-8\" />
+                  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
+                  <title>Verifying your browser...</title>
+                  <style>
+                    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+                    .card { background: #111827; padding: 32px; border-radius: 14px; box-shadow: 0 20px 60px rgba(15,23,42,0.45); width: 360px; text-align: center; border: 1px solid #1f2937; }
+                    .title { font-size: 22px; margin: 0 0 12px 0; }
+                    .subtitle { margin: 0 0 20px 0; color: #94a3b8; font-size: 14px; }
+                    .spinner { width: 56px; height: 56px; border-radius: 50%; border: 6px solid rgba(148,163,184,0.35); border-top-color: #818cf8; margin: 0 auto 16px auto; animation: spin 1s linear infinite; }
+                    .timer { font-variant-numeric: tabular-nums; color: #cbd5e1; font-size: 15px; }
+                    .badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(129,140,248,0.12); color: #c7d2fe; padding: 6px 10px; border-radius: 999px; font-size: 12px; margin-bottom: 18px; }
+                    @keyframes spin { 0% { transform: rotate(0deg);} 100% { transform: rotate(360deg);} }
+                  </style>
+                  <script src=\"https://unpkg.com/preact@10.19.3/dist/preact.min.js\" crossorigin></script>
+                  <script src=\"https://unpkg.com/preact@10.19.3/hooks/dist/hooks.umd.js\" crossorigin></script>
+                </head>
+                <body>
+                  <div id=\"app\"></div>
+                  <script>
+                    (function() {
+                      const token = "%s";
+                      const delay = %d;
+                      const redirectPath = "%s";
+                      const { h, render } = preact;
+                      const { useEffect, useState } = preactHooks;
+
+                      function Challenge() {
+                        const [seconds, setSeconds] = useState(delay);
+
+                        useEffect(() => {
+                          const countdown = setInterval(() => setSeconds((s) => Math.max(0, s - 1)), 1000);
+                          const timer = setTimeout(() => {
+                            document.cookie = `X-Form-Token-Challenge=${token};path=/;max-age=600;SameSite=Lax`;
+                            window.location.replace(redirectPath);
+                          }, delay * 1000);
+
+                          return () => { clearInterval(countdown); clearTimeout(timer); };
+                        }, []);
+
+                        return h('div', { class: 'card' }, [
+                          h('div', { class: 'badge' }, [
+                            h('span', null, 'Anti-bot Challenge'),
+                            h('span', { style: 'font-weight:600' }, 'Preact')
+                          ]),
+                          h('div', { class: 'spinner', role: 'status', 'aria-live': 'polite' }),
+                          h('h1', { class: 'title' }, 'Verifying your browser'),
+                          h('p', { class: 'subtitle' }, 'A quick, lightweight JavaScript check to prove you are human.'),
+                          h('p', { class: 'timer' }, `Continuing in ${seconds}s...`)
+                        ]);
+                      }
+
+                      render(h(Challenge, {}), document.getElementById('app'));
+                    })();
+                  </script>
+                </body>
+                </html>
+                """.formatted(token, delaySeconds, redirectPath);
+
         return Mono.just(org.springframework.http.ResponseEntity.ok()
                 .contentType(MediaType.TEXT_HTML)
                 .body(html));
