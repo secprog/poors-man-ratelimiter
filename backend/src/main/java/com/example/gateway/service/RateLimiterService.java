@@ -16,6 +16,7 @@ import reactor.core.publisher.Mono;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 @Service
@@ -96,7 +97,7 @@ public class RateLimiterService {
         // decision on the log save if possible.
         // Ideally: use a separate scheduler.
 
-        TrafficLog entry = new TrafficLog(null, LocalDateTime.now(), path, ip, status, allowed);
+        TrafficLog entry = new TrafficLog(UUID.randomUUID(), LocalDateTime.now(), path, ip, status, allowed);
         return logRepository.save(entry).then();
     }
 }

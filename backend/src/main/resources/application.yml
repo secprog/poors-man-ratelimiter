@@ -15,6 +15,12 @@ spring:
   cloud:
     gateway:
       routes:
+        - id: test_server_route
+          uri: ${TEST_SERVER_URL:http://host.docker.internal:9000}
+          predicates:
+            - Path=/test/**
+          filters:
+            - RewritePath=/test/(?<segment>.*), /$\{segment}
         - id: default_route
           uri: https://httpbin.org
           predicates:
