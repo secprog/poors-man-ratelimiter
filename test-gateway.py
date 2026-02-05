@@ -88,6 +88,9 @@ def test_direct_server_access():
 def test_gateway_routes():
     """Test that gateway routes are working"""
     print_header("TEST 2: Gateway Basic Routing")
+
+    if not reset_to_default_rate_limit():
+        print_warning("Could not reset rate limit rule")
     
     try:
         response = requests.get(f"{GATEWAY_URL}/test/api/hello", timeout=10)
@@ -107,6 +110,9 @@ def test_gateway_routes():
 def test_basic_get_request():
     """Test basic GET request through gateway"""
     print_header("TEST 3: Basic GET Request (No Rate Limiting)")
+
+    if not reset_to_default_rate_limit():
+        print_warning("Could not reset rate limit rule")
     
     try:
         response = requests.get(f"{GATEWAY_URL}/test/api/hello", timeout=10)
