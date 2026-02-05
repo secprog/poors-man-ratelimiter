@@ -16,6 +16,11 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 import uuid
 
+# Fix Unicode encoding on Windows
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
 # Configuration
 GATEWAY_URL = "http://localhost:8080"
 TEST_SERVER_URL = "http://localhost:9000"
