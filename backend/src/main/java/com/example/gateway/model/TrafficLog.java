@@ -15,8 +15,11 @@ public class TrafficLog {
     @Id
     private UUID id;
     private LocalDateTime timestamp;
+    private String method;
     private String path;
+    private String host;
     private String clientIp;
     private int statusCode;
     private boolean allowed;
+    private boolean queued;
 }

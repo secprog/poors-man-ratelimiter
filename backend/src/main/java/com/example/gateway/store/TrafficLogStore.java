@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -53,6 +54,22 @@ public class TrafficLogStore {
                     log.warn("Failed to append traffic log: {}", error.getMessage());
                     return Mono.empty();
                 });
+    }
+
+    public Mono<List<TrafficLog>> getRecentLogs(long limit) {
+        return listOps().range(RedisKeys.TRAFFIC_LOG_LIST, 0, limit - 1)
+                .collectList()
+                .flatMapMany(list -> reactor.core.publisher.Flux.fromIterable(list))
+                .flatMap(json -> Mono.fromCallable(() -> {
+                    try {
+                        return objectMapper.readValue(json, TrafficLog.class);
+                    } catch (Exception e) {
+                        log.warn("Failed to deserialize traffic log: {}", e.getMessage());
+                        return null;
+                    }
+                }))
+                .filter(log -> log != null)
+                .collectList();
     }
 
     private Mono<String> serializeLog(TrafficLog logEntry) {

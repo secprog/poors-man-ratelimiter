@@ -125,7 +125,7 @@ public class RateLimiterService {
             .toList();
 
         if (specificRules.isEmpty() && globalRules.isEmpty()) {
-            return logTraffic(path, clientIp, 200, true)
+            return logTraffic(path, clientIp, method, host, 200, true, false)
                     .thenReturn(new RateLimitResult(true, 0, false));
         }
 
@@ -136,7 +136,7 @@ public class RateLimiterService {
         return applyRules(matchedRules, exchange, path, clientIp, authHeader, bodyBytes)
                 .flatMap(result -> {
                     int status = result.isAllowed() ? 200 : 429;
-                    return logTraffic(path, clientIp, status, result.isAllowed())
+                    return logTraffic(path, clientIp, method, host, status, result.isAllowed(), result.isQueued())
                             .thenReturn(result);
                 });
     }
@@ -466,8 +466,8 @@ public class RateLimiterService {
                 });
     }
 
-    private Mono<Void> logTraffic(String path, String ip, int status, boolean allowed) {
-        TrafficLog logEntry = new TrafficLog(UUID.randomUUID(), LocalDateTime.now(), path, ip, status, allowed);
+    private Mono<Void> logTraffic(String path, String ip, String method, String host, int status, boolean allowed, boolean queued) {
+        TrafficLog logEntry = new TrafficLog(UUID.randomUUID(), LocalDateTime.now(), method, path, host, ip, status, allowed, queued);
         return trafficLogStore.append(logEntry)
                 .onErrorResume(e -> {
                     log.warn("Failed to log traffic: {}", e.getMessage());

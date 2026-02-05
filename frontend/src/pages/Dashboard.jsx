@@ -17,6 +17,8 @@ export default function Dashboard() {
         error: null,
         isConnected: false
     });
+    const [rules, setRules] = useState([]);
+    const [trafficLogs, setTrafficLogs] = useState([]);
 
     useEffect(() => {
         // Initial load from REST API
@@ -89,6 +91,21 @@ export default function Dashboard() {
         fetchInitialStats();
     }, [rollingWindowMinutes]);
 
+    const fetchTrafficLogs = async () => {
+        try {
+            const res = await api.get('/analytics/traffic?limit=100');
+            setTrafficLogs(res.data || []);
+        } catch (err) {
+            console.error("Failed to fetch traffic logs", err);
+        }
+    };
+
+    useEffect(() => {
+        fetchTrafficLogs();
+        const interval = setInterval(fetchTrafficLogs, 2000); // Update every 2 seconds
+        return () => clearInterval(interval);
+    }, []);
+
     const computeWindowTotals = (points, windowMs) => {
         if (windowMs === 0) {
             // "Now" mode: only show current minute bucket
@@ -139,6 +156,7 @@ export default function Dashboard() {
                 rollingWindowMinutes * 60 * 1000
             );
 
+            setRules(rulesRes.data || []);
             setStats(prev => ({
                 ...prev,
                 totalRules: rulesRes.data.length,
@@ -232,14 +250,77 @@ export default function Dashboard() {
             </div>
 
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-                <h2 className="text-lg font-semibold mb-4">System Status</h2>
-                <div className="flex items-center space-x-3">
-                    <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
-                    <span className="text-gray-700">Gateway is running and accepting requests</span>
-                </div>
-                <div className="mt-4 text-sm text-gray-500">
-                    <p>Backend API: <code className="bg-gray-100 px-2 py-1 rounded">http://localhost:8080</code></p>
-                    <p className="mt-1">Frontend: <code className="bg-gray-100 px-2 py-1 rounded">http://localhost:3000</code></p>
+                <h2 className="text-lg font-semibold mb-4">Real-time Traffic</h2>
+                <div className="overflow-x-auto max-h-96 overflow-y-auto border border-gray-200 rounded-lg">
+                    <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50 sticky top-0">
+                            <tr>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Verb</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Path</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Host</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IP</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                            {trafficLogs.length === 0 ? (
+                                <tr>
+                                    <td colSpan="7" className="px-4 py-8 text-center text-gray-500">
+                                        No traffic yet
+                                    </td>
+                                </tr>
+                            ) : (
+                                trafficLogs.map((log, idx) => (
+                                    <tr key={idx} className="hover:bg-gray-50 text-sm">
+                                        <td className="px-4 py-2 text-gray-900 font-mono text-xs">
+                                            {log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : '-'}
+                                        </td>
+                                        <td className="px-4 py-2 font-semibold">
+                                            <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                                {log.method || 'GET'}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-2 font-mono text-gray-900 truncate max-w-xs" title={log.path}>
+                                            {log.path}
+                                        </td>
+                                        <td className="px-4 py-2 text-gray-700 text-xs truncate max-w-xs" title={log.host || 'N/A'}>
+                                            {log.host || '-'}
+                                        </td>
+                                        <td className="px-4 py-2 text-gray-600 font-mono text-xs">
+                                            {log.clientIp}
+                                        </td>
+                                        <td className="px-4 py-2">
+                                            <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
+                                                log.statusCode === 200 ? 'bg-green-100 text-green-800' :
+                                                log.statusCode === 429 ? 'bg-red-100 text-red-800' :
+                                                log.statusCode === 403 ? 'bg-orange-100 text-orange-800' :
+                                                'bg-gray-100 text-gray-800'
+                                            }`}>
+                                                {log.statusCode}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-2">
+                                            {log.queued ? (
+                                                <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                                                    Queued
+                                                </span>
+                                            ) : log.allowed ? (
+                                                <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
+                                                    Allowed
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800">
+                                                    Blocked
+                                                </span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
