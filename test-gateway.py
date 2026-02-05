@@ -283,6 +283,36 @@ def reset_to_default_rate_limit():
         return False
 
 
+def cleanup_test_rules():
+    """Delete the /test/** rule after all tests are complete to avoid interference with other test suites"""
+    try:
+        response = requests.get(RULES_ADMIN_URL, timeout=10)
+        if response.status_code != 200:
+            return False
+
+        rules = response.json()
+        test_rule = next(
+            (rule for rule in rules if rule.get("pathPattern") == "/test/**"), None
+        )
+
+        if not test_rule:
+            return True
+
+        rule_id = test_rule.get("id")
+        delete_response = requests.delete(
+            f"{RULES_ADMIN_URL}/{rule_id}", timeout=10
+        )
+
+        if delete_response.status_code in (200, 204, 404):
+            # Wait a moment for rule to be fully removed
+            time.sleep(1)
+            return True
+
+        return False
+    except Exception:
+        return False
+
+
 def test_antibot_valid_submission():
     """Test anti-bot protection with valid submission"""
     print_header("TEST 5: Anti-Bot Protection - Valid Submission")
@@ -1430,6 +1460,9 @@ def main():
     results["Queueing Behavior"] = test_queueing_behavior()
     results["Queueing Delay Timing"] = test_queueing_delay_timing()
     results["Disable Queueing"] = test_queueing_disabled_reverts_to_rejection()
+
+    # Clean up test rules to avoid interference with other test suites
+    cleanup_test_rules()
 
     # Print summary
     print_summary(results)
