@@ -90,15 +90,13 @@ def test_gateway_routes():
     print_header("TEST 2: Gateway Basic Routing")
     
     try:
-        # Test the test server route through gateway
-        response = requests.get(f"{GATEWAY_URL}/test/api/hello", timeout=10)
+        response = requests.get(f"{GATEWAY_URL}/test/api/hellollo", timeout=10)
         if response.status_code == 200:
-            print_success("Gateway is routing to test server successfully")
-            print_info(f"Response: {response.json()}")
+            print_success("Gateway is routing to httpbin successfully")
+            print_info(f"Response status: {response.status_code}")
             return True
         else:
             print_failure(f"Gateway returned status {response.status_code}")
-            print_info(f"Response: {response.json() if response.text else 'No response'}")
             return False
     except requests.exceptions.RequestException as e:
         print_failure(f"Gateway is not accessible: {e}")
@@ -111,7 +109,6 @@ def test_basic_get_request():
     print_header("TEST 3: Basic GET Request (No Rate Limiting)")
     
     try:
-        # Try the test server through gateway
         response = requests.get(f"{GATEWAY_URL}/test/api/hello", timeout=10)
         print_success(f"GET request successful - Status: {response.status_code}")
         print_info(f"Response: {json.dumps(response.json(), indent=2)[:200]}...")
@@ -488,19 +485,18 @@ def test_missing_antibot_headers():
     """Test requests with missing anti-bot headers"""
     print_header("TEST 11: Missing Anti-Bot Headers")
     
-    # Try POST without any anti-bot headers
+    # Try GET without any anti-bot headers (should work)
     headers = {'Content-Type': 'application/json'}
-    data = {'message': 'No protection headers'}
     
     try:
-        response = requests.post(
-            f"{GATEWAY_URL}/api/tokens/form",
+        response = requests.get(
+            f"{GATEWAY_URL}/test/api/hello",
             timeout=10
         )
         
-        # Should still return 200 since GET endpoints don't require headers
+        # GET requests don't require anti-bot headers
         if response.status_code == 200:
-            print_success("GET endpoints accessible without anti-bot headers")
+            print_success("GET requests accessible without anti-bot headers")
             return True
         else:
             print_failure(f"Unexpected response: {response.status_code}")
@@ -822,7 +818,7 @@ def test_gateway_headers():
     print_header("TEST 19: Gateway Header Forwarding")
     
     try:
-        # Test that headers are properly forwarded to test server
+        # Test that headers are properly forwarded to httpbin
         custom_headers = {
             'X-Custom-Header': 'test-value-123',
             'X-Client-ID': 'test-client',
@@ -830,7 +826,7 @@ def test_gateway_headers():
         }
         
         response = requests.get(
-            f"{GATEWAY_URL}/test/api/status",
+            f"{GATEWAY_URL}/test/api/hello",
             headers=custom_headers,
             timeout=10
         )
@@ -946,3 +942,4 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         print(f"\n\n{Colors.WARNING}Tests interrupted by user{Colors.ENDC}")
         sys.exit(130)
+

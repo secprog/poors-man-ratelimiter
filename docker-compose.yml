@@ -11,6 +11,16 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  test-server:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - ./test-server.py:/app/test-server.py
+    ports:
+      - "9000:9000"
+    command: sh -c "pip install flask -q && python test-server.py"
+    restart: always
+
   backend:
     build: ./backend
     ports:
@@ -19,8 +29,10 @@ services:
       SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/gateway_db
       SPRING_R2DBC_USERNAME: postgres
       SPRING_R2DBC_PASSWORD: password
+      TEST_SERVER_URL: http://test-server:9000
     depends_on:
       - postgres
+      - test-server
     restart: always
 
   frontend:
