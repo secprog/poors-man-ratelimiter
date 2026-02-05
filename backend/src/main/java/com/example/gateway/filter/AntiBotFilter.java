@@ -155,13 +155,6 @@ public class AntiBotFilter implements GlobalFilter, Ordered {
         return token;
     }
 
-    private Mono<Void> rejectRequest(ServerWebExchange exchange, String reason) {
-        configService.incrementBlocked(); // Using configService? No, need AnalyticsService.
-        exchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
-        exchange.getResponse().getHeaders().add("X-Rejection-Reason", reason);
-        return exchange.getResponse().setComplete();
-    }
-
     private String getClientIp(ServerWebExchange exchange) {
         var remoteAddress = exchange.getRequest().getRemoteAddress();
         if (remoteAddress != null && remoteAddress.getAddress() != null) {

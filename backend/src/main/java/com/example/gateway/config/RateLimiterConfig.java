@@ -116,4 +116,9 @@ public class RateLimiterConfig {
                 .sorted(Comparator.comparingInt((RateLimitPolicy p) -> p.getRoutePattern().length()).reversed())
                 .collect(Collectors.toList());
     }
+
+    private RateLimitPolicy findMatchingPolicy(List<RateLimitPolicy> policies, ServerWebExchange exchange) {
+        List<RateLimitPolicy> matching = findMatchingPolicies(policies, exchange);
+        return !matching.isEmpty() ? matching.get(0) : null;
+    }
 }
