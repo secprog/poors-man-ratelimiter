@@ -14,6 +14,23 @@ backend/*.iml
 backend/*.iws
 backend/*.ipr
 
+# Gateway - Maven
+gateway/target/
+gateway/.classpath
+gateway/.project
+gateway/.settings/
+gateway/bin/
+gateway/*.jar
+gateway/*.war
+
+# Gateway - IDE
+gateway/.idea/
+gateway/.vscode/
+gateway/*.iml
+gateway/*.iws
+gateway/*.ipr
+
+
 # Frontend - Node modules and build
 frontend/node_modules/
 frontend/dist/

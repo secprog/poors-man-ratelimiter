@@ -1,13 +1,10 @@
 server:
-  port: 8080
+  port: 9090
   address: 0.0.0.0
 
 spring:
   application:
-    name: gateway-service
-  autoconfigure:
-    exclude:
-      - org.springframework.cloud.gateway.config.GatewayRedisAutoConfiguration
+    name: admin-service
   data:
     redis:
       host: ${REDIS_HOST:redis}
@@ -16,7 +13,5 @@ spring:
 
 logging:
   level:
-    org.springframework.cloud.gateway: INFO
+    com.example.admin: INFO
     org.springframework.data.redis: INFO
-
-
