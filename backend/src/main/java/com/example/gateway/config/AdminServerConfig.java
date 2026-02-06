@@ -69,7 +69,7 @@ public class AdminServerConfig {
         ReactorHttpHandlerAdapter adapter = new ReactorHttpHandlerAdapter(httpHandler);
         
         return HttpServer.create()
-            .host("0.0.0.0")
+            .host("127.0.0.1") // BIND TO LOCALHOST ONLY
             .port(9090)
             .handle(adapter)
             .doOnBind(conn -> log.info("Admin server successfully bound to port 9090"))
