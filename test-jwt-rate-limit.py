@@ -178,10 +178,10 @@ def main():
     print("=" * 70)
 
     print("\n[!] Key Observations:")
-    print("  • Different JWT identifiers (sub:tenant_id) have separate quotas")
-    print("  • Same user in different tenants = different quotas")
-    print("  • Missing/invalid JWT → automatic fallback to IP-based limiting")
-    print("  • Expected: 5 successful requests per identifier, then 429")
+    print("  - Different JWT identifiers (sub:tenant_id) have separate quotas")
+    print("  - Same user in different tenants = different quotas")
+    print("  - Missing/invalid JWT -> automatic fallback to IP-based limiting")
+    print("  - Expected: 5 successful requests per identifier, then 429")
 
 
 if __name__ == "__main__":
