@@ -1,6 +1,20 @@
 # Poor Man Rate Limiter Gateway
 
-Production-ready API gateway with advanced rate limiting, anti-bot defenses, real-time analytics, and comprehensive admin UI, fully vibe coded!! Proceed with Caution !
+Production-ready API gateway with advanced rate limiting, anti-bot defenses, real-time analytics, and comprehensive admin UI. Microservices architecture with isolated admin service for security and scalability.
+
+## 🏗️ Architecture
+
+**Microservices Design:**
+- **Gateway Service** (port 8080): Public-facing API gateway handling rate limiting, anti-bot protection, and request routing
+- **Admin Service** (port 9090): Isolated admin API and real-time analytics WebSocket server (localhost-only access)
+- **Redis**: Central state store and single source of truth for configuration and analytics
+- **Frontend**: React admin UI served via Nginx, proxying to both services
+
+**Communication:**
+- Gateway ↔ Redis: Read rules, write request counters and traffic logs
+- Admin Service ↔ Redis: CRUD operations on rules/config, analytics aggregation
+- Frontend ↔ Admin Service: REST APIs + WebSocket for real-time updates
+- Gateway **never calls** Admin Service directly - Redis is the only shared interface
 
 ## 🚀 Key Features
 
@@ -19,7 +33,7 @@ Production-ready API gateway with advanced rate limiting, anti-bot defenses, rea
   - Body field extraction supports JSON, form URL-encoded, XML, and multipart
 - **Multiple Limit Types**: IP, JWT, header, cookie, body
 - **Per-route Configuration**: Different limits for different endpoints
-- **Real-time Updates**: Changes propagate instantly via service layer
+- **Real-time Updates**: Changes propagate instantly via Redis pub/sub
 
 ### Anti-Bot Protection
 - **Honeypot Fields** - Hidden inputs that trap bots
@@ -45,46 +59,70 @@ Production-ready API gateway with advanced rate limiting, anti-bot defenses, rea
 - **Analytics**: Charts and graphs showing traffic patterns over time
 - **Settings**: System configuration with immediate apply (no restart required)
 
-## 📸 Screenshots
+## � Stack
 
-![Dashboard overview](demo/dash1.PNG)
-![Dashboard traffic details](demo/dash2.PNG)
-![Dashboard live updates](demo/dash3.PNG)
-![Policy management](demo/dash4.PNG)
-![System settings](demo/dash5.PNG)
+### Gateway Service
+- Spring Cloud Gateway 3 with WebFlux (Reactive, non-blocking)
+- Reactive Redis for shared state
+- Caffeine caching for performance
+- Spring Boot 3.2.1, Java 21
 
-## 🛠 Stack
+### Admin Service  
+- Spring Boot 3.2.1 WebFlux (Reactive HTTP + WebSocket)
+- Reactive Redis for data persistence
+- Real-time analytics broadcasting
+- Scheduled analytics aggregation (2-second intervals)
+- Java 21
 
-- **Backend**: Spring Boot 3, Spring Cloud Gateway (WebFlux), reactive Redis, Caffeine caching
-- **Frontend**: React 18, Vite, Tailwind CSS, Recharts, Lucide icons, served via Nginx
-- **Database**: Redis 7 with reactive driver (AOF persistence)
-- **Infrastructure**: Docker Compose for orchestration, multi-stage builds
+### Frontend
+- React 18 with Vite
+- Tailwind CSS for styling
+- Recharts for data visualization
+- Lucide icons
+- Nginx reverse proxy
+
+### Infrastructure
+- Redis 7 with AOF persistence and password protection
+- Docker Compose orchestration
+- Multi-stage Docker builds for optimization
 
 ## 🏃 Quick Start
 
 ### Docker (Recommended)
 ```bash
 docker compose up --build
-# Frontend (Admin UI): http://localhost:3000
-# Gateway (public):    http://localhost:8080
-# Admin APIs:          http://localhost:9090/api
-# Redis:               localhost:6379
+
+# Access Points:
+# - Admin UI:        http://localhost:3000
+# - Gateway (public): http://localhost:8080
+# - Admin API:       http://localhost:9090/poormansRateLimit/api/admin/*
+# - Redis:           localhost:6379
 ```
 
 ### Development Setup
+
+#### Gateway Service
+```bash
+cd gateway
+mvn clean package -DskipTests
+java -jar target/*.jar
+# Runs on port 8080
+```
+
+#### Admin Service
+```bash
+cd backend  
+mvn clean package -DskipTests
+java -jar target/*.jar
+# Runs on port 9090
+```
 
 #### Frontend
 ```bash
 cd frontend
 npm install
 npm run dev  # Requires Node 18+
-```
-
-#### Backend
-```bash
-cd backend
-mvn clean package -DskipTests
-java -jar target/*.jar
+# Runs on port 5173 (dev) or served via Nginx (production)
 ```
 
 ## 📚 Core Concepts
@@ -209,130 +247,101 @@ Configure via Settings UI or `system_config` table:
 
 ## 🔌 API Reference
 
-### Admin Endpoints
+### Admin Service Endpoints (port 9090)
 
-Admin APIs are served on the admin server (default `http://localhost:9090/api`).
-If you access them through the frontend (Nginx), use `http://localhost:3000/poormansRateLimit/api`.
+**Base Path**: `/poormansRateLimit/api/admin`
 
 #### Rate Limit Rules
 ```bash
 # List all rules
-GET /api/admin/rules
-
-# Get active rules only
-GET /api/admin/rules/active
+GET /poormansRateLimit/api/admin/rules
 
 # Get specific rule
-GET /api/admin/rules/{id}
+GET /poormansRateLimit/api/admin/rules/{id}
 
 # Create rule
-POST /api/admin/rules
-{
-  "pathPattern": "/api/orders/**",
-  "allowedRequests": 50,
-  "windowSeconds": 60,
-  "active": true,
-  "queueEnabled": false,
-  "jwtEnabled": false
-}
+POST /poormansRateLimit/api/admin/rules
+Content-Type: application/json
 
-# Create JWT-based rate limit rule
-POST /api/admin/rules
 {
-  "pathPattern": "/api/tenant/**",
+  "pathPattern": "/api/**",
   "allowedRequests": 100,
   "windowSeconds": 60,
   "active": true,
-  "jwtEnabled": true,
-  "jwtClaims": "[\"sub\", \"tenant_id\"]",
-  "jwtClaimSeparator": ":"
+  "priority": 1
 }
 
-# Update entire rule
-PUT /api/admin/rules/{id}
+# Update rule
+PUT /poormansRateLimit/api/admin/rules/{id}
 
-# Update only queue settings
-PATCH /api/admin/rules/{id}/queue
+# Update queue settings only
+PATCH /poormansRateLimit/api/admin/rules/{id}/queue
 {
   "queueEnabled": true,
-  "maxQueueSize": 5,
-  "delayPerRequestMs": 300
+  "maxQueueSize": 10,
+  "delayPerRequestMs": 500
 }
 
 # Delete rule
-DELETE /api/admin/rules/{id}
+DELETE /poormansRateLimit/api/admin/rules/{id}
 
-# Refresh rules cache
-POST /api/admin/rules/refresh
-
-# Update only body-based settings (content-type is configured in full rule updates)
-PATCH /api/admin/rules/{id}/body-limit
-{
-  "bodyLimitEnabled": true,
-  "bodyFieldPath": "user_id",
-  "bodyLimitType": "replace_ip"
-}
+# Refresh rule cache
+POST /poormansRateLimit/api/admin/rules/refresh
 ```
 
 #### System Configuration
 ```bash
-# Get all configs
-GET /api/config
+# Get all config
+GET /poormansRateLimit/api/admin/config
 
-# Update specific config
-POST /api/config/{key}
-{
-  "value": "new-value"
-}
+# Update config
+POST /poormansRateLimit/api/admin/config/{key}
+Content-Type: text/plain
+
+{value}
 ```
 
 #### Analytics
 ```bash
 # Get summary stats
-GET /api/analytics/summary
-{
-  "allowed": 15234,
-  "blocked": 892,
-  "activePolicies": 5
-}
+GET /poormansRateLimit/api/admin/analytics/summary
+# Returns: { requestsAllowed, requestsBlocked, activePolicies }
 
 # Get time series data
-GET /api/analytics/timeseries
-[
-  {
-    "timestamp": "2026-02-05T10:00:00Z",
-    "allowed": 453,
-    "blocked": 12
-  }
-]
+GET /poormansRateLimit/api/admin/analytics/timeseries?from={ISO-date}&to={ISO-date}
 ```
 
-#### Tokens & Challenges
-```bash
-# Get form protection token
-GET /api/tokens/form
-{
-  "token": "uuid-here",
-  "loadTime": 1739024400000,
-  "honeypotField": "_hp_email",
-  "expiresIn": 600
-}
-
-# Get challenge page (if configured)
-GET /api/tokens/challenge
-# Returns HTML with meta refresh, JS, or Preact challenge
-```
-
-### WebSocket
+#### WebSocket (Real-time Analytics)
 ```javascript
-// Connect to real-time analytics
-const ws = new WebSocket('ws://localhost:8080/api/ws/analytics');
+// Connect to WebSocket
+const ws = new WebSocket('ws://localhost:9090/poormansRateLimit/api/admin/ws/analytics');
+
+// Receive updates every 2 seconds
 ws.onmessage = (event) => {
-  const update = JSON.parse(event.data);
-  console.log('Requests allowed:', update.requestsAllowed);
-  console.log('Requests blocked:', update.requestsBlocked);
+  const data = JSON.parse(event.data);
+  // { type: 'snapshot' | 'summary', payload: { requestsAllowed, requestsBlocked, activePolicies } }
 };
 ```
+
+### Gateway Endpoints (port 8080)
+
+#### Anti-Bot Tokens
+```bash
+# Get form protection token
+GET /poormansRateLimit/api/tokens/form
+# Returns: { token: "uuid", timestamp: 1234567890 }
+
+# Get challenge page
+GET /poormansRateLimit/api/tokens/challenge?type=metarefresh|javascript|preact
+```
+
+#### Proxied Routes
+```bash
+# Routes configured in application.yml
+# Example: /httpbin/** → https://httpbin.org/
+```
+
+
 
 ## 🧪 Testing
 
@@ -344,81 +353,201 @@ python run-tests.py
 # Windows (PowerShell)
 .\Run-Tests.ps1
 
-# Manual
-python test-server.py  # Terminal 1
-python test-gateway.py # Terminal 2
+# Run specific test files
+python test-gateway.py
+python test-jwt-rate-limit.py
+python test-body-content-types.py
 ```
 
 ### Test Coverage
 - ✅ Gateway routing and proxying (httpbin integration)
-- ✅ Rate limiting (rapid requests, burst handling)
+- ✅ Rate limiting (token bucket, rapid requests, burst handling)
 - ✅ Queueing/leaky bucket (delay timing, queue overflow)
 - ✅ Anti-bot (honeypot, timing, tokens, idempotency)
 - ✅ Challenges (meta refresh, JavaScript, Preact)
+- ✅ JWT-based rate limiting (claim extraction, fallback)
+- ✅ Header/Cookie/Body-based identifiers (multi-content-type support)
 - ✅ Admin API (CRUD for rules, configs)
-- ✅ Analytics (summary, time series)
-- ✅ WebSocket (real-time updates)
+- ✅ Analytics (summary, time series, WebSocket updates)
 
-**24 automated tests** covering all features. See:
+**24+ automated tests** covering all features. See:
 - `test-gateway.py` - Main test suite
+- `test-jwt-rate-limit.py` - JWT rate limiting tests
+- `test-body-content-types.py` - Body field extraction tests
 - `AUTOMATED_QUEUEING_TESTS.md` - Queueing test details
-- `QUEUEING_IMPLEMENTATION.md` - Technical implementation docs
+- `TEST-README.md` - Testing guide
+
+### Manual Testing with Docker
+```bash
+# Start all services
+docker compose up --build
+
+# Test gateway routing
+curl http://localhost:8080/httpbin/get
+
+# Test rate limiting (burst requests)
+for i in {1..110}; do curl http://localhost:8080/httpbin/anything; done
+
+# Test admin API
+curl http://localhost:9090/poormansRateLimit/api/admin/rules
+
+# Test frontend
+open http://localhost:3000
+```
 
 ## 📁 Architecture Overview
 
-### Backend Structure
+### Microservices Structure
+
 ```
-backend/src/main/java/com/example/gateway/
-├── GatewayApplication.java          # Spring Boot entry point
-├── config/
-│   ├── AdminServerConfig.java       # Admin API server config
-│   └── WebSocketConfig.java         # WebSocket handler mapping
-├── controller/
-│   ├── AnalyticsController.java     # Stats endpoints
-│   ├── RateLimitRuleController.java # Rule management + queue config
-│   ├── SystemConfigController.java  # Settings CRUD
-│   └── TokenController.java         # Form tokens + challenges
-├── dto/
-│   ├── AnalyticsUpdate.java         # WebSocket message format
-│   └── RateLimitResult.java         # Filter decision result
-├── filter/
-│   ├── RateLimitFilter.java         # Token bucket + queueing logic
-│   └── AntiBotFilter.java           # Honeypot, timing, token validation
-├── model/
-│   ├── RateLimitRule.java           # Rule entity (with queue fields)
-│   ├── RequestCounter.java          # Per-IP counter
-│   ├── SystemConfig.java            # Config key-value store
-│   └── TrafficLog.java              # Request log entry
-├── store/
-│   ├── RateLimitRuleStore.java
-│   ├── RequestCounterStore.java
-│   ├── SystemConfigStore.java
-│   └── TrafficLogStore.java
-├── service/
-│   ├── AnalyticsService.java        # Stats aggregation + broadcasting
-│   ├── ConfigurationService.java    # Cached config access
-│   ├── RateLimiterService.java      # Queue management + CAS loops
-│   └── RedisBootstrapService.java   # Default rule seeding
-└── websocket/
-    ├── AnalyticsBroadcaster.java    # Flux sink for WebSocket
-    └── AnalyticsWebSocketHandler.java # WebSocket connection handler
+rate-limiter-gateway/
+├── gateway/                      # Public-facing gateway service (port 8080)
+│   └── src/main/java/com/example/gateway/
+│       ├── GatewayApplication.java
+│       ├── filter/
+│       │   ├── RateLimitFilter.java      # Token bucket + leaky bucket enforcement
+│       │   └── AntiBotFilter.java        # Honeypot, timing, form token validation
+│       ├── controller/
+│       │   └── TokenController.java      # Form tokens & challenge pages
+│       ├── service/
+│       │   ├── RateLimiterService.java   # Core rate limit logic + queue management
+│       │   ├── ConfigurationService.java # Cached Redis config access
+│       │   ├── JwtService.java           # JWT claim extraction (no signature verification)
+│       │   └── RouteSyncService.java     # Dynamic route updates from Redis
+│       ├── store/
+│       │   ├── RateLimitRuleStore.java   # Redis CRUD for rules
+│       │   ├── RequestCounterStore.java  # Request counter persistence
+│       │   └── TrafficLogStore.java      # Audit log storage
+│       ├── util/
+│       │   └── BodyFieldExtractor.java   # Multi-format body parsing
+│       ├── model/                        # Domain entities (shared with backend)
+│       └── dto/                          # Data transfer objects
+│
+├── backend/                      # Isolated admin service (port 9090, localhost-only)
+│   └── src/main/java/com/example/admin/
+│       ├── AdminApplication.java
+│       ├── controller/
+│       │   ├── RateLimitRuleController.java  # CRUD + queue config endpoints
+│       │   ├── SystemConfigController.java   # Settings management
+│       │   └── AnalyticsController.java      # Stats REST API
+│       ├── service/
+│       │   ├── RateLimitRuleStore.java       # Redis rule persistence
+│       │   ├── SystemConfigStore.java        # Redis config management
+│       │   └── AnalyticsService.java         # Stats aggregation from Redis
+│       ├── websocket/
+│       │   ├── AnalyticsWebSocketHandler.java    # WebSocket connection handler
+│       │   └── AnalyticsBroadcaster.java         # Reactive broadcast (2s intervals)
+│       ├── config/
+│       │   ├── RedisConfig.java              # Reactive Redis + ObjectMapper
+│       │   └── WebSocketConfig.java          # WebSocket endpoint mapping
+│       ├── model/                            # Domain entities
+│       └── dto/
+│           └── WebSocketMessage.java         # {type, payload} wrapper
+│
+├── frontend/                     # React admin UI (port 3000, Nginx)
+│   ├── src/
+│   │   ├── pages/
+│   │   │   ├── Dashboard.jsx         # Real-time stats (WebSocket)
+│   │   │   ├── Analytics.jsx         # Charts (Recharts)
+│   │   │   ├── Policies.jsx          # Rate limit rule management
+│   │   │   └── Settings.jsx          # System configuration
+│   │   ├── utils/
+│   │   │   ├── websocket.js          # WebSocket client
+│   │   │   └── formProtection.js     # Anti-bot helpers
+│   │   ├── api.js                    # Axios (proxied /api → backends)
+│   │   ├── admin-api.js              # Direct localhost:9090 calls
+│   │   └── App.jsx                   # React Router
+│   └── nginx.conf                    # Reverse proxy config
+│       # /poormansRateLimit/api/admin/** → http://backend:9090
+│       # /ws/** → WebSocket proxy
+│
+└── docker-compose.yml
+    # Services: redis, test-server, httpbin, gateway, backend, frontend
 ```
 
-### Frontend Structure
+### Data Flow
+
+#### Request Flow (Public Traffic)
 ```
-frontend/src/
-├── main.jsx                # React entry point
-├── App.jsx                 # Root component with routing
-├── api.js                  # Axios client (proxied via Nginx)
-├── pages/
-│   ├── Dashboard.jsx       # Real-time stats with WebSocket
-│   ├── Analytics.jsx       # Recharts visualizations
-│   ├── Policies.jsx        # Rule CRUD interface
-│   └── Settings.jsx        # System config UI
-└── utils/
-    ├── formProtection.js   # Anti-bot token helpers
-    └── websocket.js        # WebSocket client wrapper
+Internet → gateway:8080 → RateLimitFilter → AntiBotFilter → Routes → Upstream Services
+                    ↓                             ↓
+                Redis (read rules)         Redis (write counters/logs)
 ```
+
+#### Admin Operations
+```
+Browser → frontend:3000 → Nginx → backend:9090 → Redis
+                                        ↓
+                                   WebSocket (analytics)
+```
+
+#### Analytics Aggregation
+```
+gateway → writes counters/logs to Redis
+    ↓
+backend → reads Redis → aggregates stats → broadcasts via WebSocket → frontend
+    (scheduled every 2 seconds)
+```
+
+### Communication Patterns
+
+1. **Gateway → Redis**: 
+   - **Read**: Rate limit rules, system config
+   - **Write**: Request counters, traffic logs
+   - **No direct HTTP calls** to admin service
+
+2. **Admin Service → Redis**:
+   - **Read**: Counters, logs for analytics aggregation
+   - **Write**: Rules, system config (CRUD operations)
+   - **No dependencies** on gateway service
+
+3. **Frontend → Admin Service**:
+   - **REST API**: CRUD operations on rules/configs
+   - **WebSocket**: Real-time analytics updates
+
+4. **Frontend → Gateway**:
+   - **End-user traffic**: Proxied through gateway routes
+   - **No admin operations**: Admin APIs isolated to backend service
+
+### Redis Data Schema
+
+#### Keys Used By Gateway
+```
+rate_limit_rules:<uuid>         # Rate limit rule configurations
+system_config:*                 # System settings (honeypot config, etc.)
+request_counter:<rule>:<id>     # Per-identifier request counts (TTL: window duration)
+traffic_logs                    # Request audit log (list)
+```
+
+#### Keys Used By Admin Service
+```
+rate_limit_rules:*              # CRUD operations on rules
+system_config:*                 # Settings management
+request_stats:<timestamp>       # Aggregated analytics (hash)
+request_stats:index             # Time series index (zset)
+```
+
+### Security Model
+
+- **Gateway (port 8080)**: 
+  - Publicly accessible
+  - No admin operations exposed
+  - Rate limiting and anti-bot enforcement only
+
+- **Admin Service (port 9090)**:
+  - Localhost-only binding via docker-compose
+  - OS-level port security: `127.0.0.1:9090:9090`
+  - Not accessible from outside host machine
+
+- **Frontend (port 3000)**:
+  - Localhost-only binding
+  - Reverse proxy to both services
+  - CORS configured for development (restrict in production)
+
+- **Redis (port 6379)**:
+  - Localhost-only binding
+  - Password-protected
+  - AOF persistence enabled
 
 ### Redis Keyspace
 - `rate_limit_rules` (hash) - Path-based rules with queue config
@@ -449,63 +578,156 @@ Use `headerLimitType`, `cookieLimitType`, or `bodyLimitType` to combine with IP 
 - **`traffic-logs-retention-hours`**: Hours to keep raw request logs (default: `24`)
 - **`traffic-logs-max-entries`**: Maximum entries kept in the traffic log list (default: `10000`)
 
-### CORS
-- Configured at controller level via `@CrossOrigin` annotations
-- Frontend proxies `/poormansRateLimit/api/**` to `backend:9090` and `/api/**` + `/api/ws/**` to `backend:8080` (see `frontend/nginx.conf`)
+### CORS & Networking
+- **Frontend (Nginx)** proxies:
+  - `/poormansRateLimit/api/admin/**` → `http://backend:9090` (Admin Service)
+  - `/ws/**` → `ws://backend:9090` (WebSocket)
+  - All static assets served locally
+- **CORS** configured at controller level via `@CrossOrigin` annotations
+- **Production**: Restrict origins, enable TLS, use proper authentication
 
-### Credentials
-- Redis connection config in `application.yml` and `docker-compose.yml`
-- Production: Use environment variables, ACLs, and private networking
+### Credentials & Secrets
+- Redis password set via `REDIS_PASSWORD` environment variable (default: `dev-only-change-me`)
+- Connection config in `application.yml` and `docker-compose.yml`
+- **Production**: Use secrets management (AWS Secrets Manager, Vault, etc.), ACLs, and private networking
 
 ## 🐛 Troubleshooting
 
-### Docker Build Issues
+### Service Won't Start
 ```bash
-# Clean rebuild
+# Check container status
+docker compose ps
+
+# View logs
+docker compose logs gateway --tail 50
+docker compose logs backend --tail 50
+docker compose logs frontend --tail 20
+
+# Check Redis connectivity
+docker exec -it rate-limiter-gateway-redis-1 redis-cli -a dev-only-change-me PING
+```
+
+### Build Issues
+```bash
+# Clean rebuild all services
 docker compose down -v
 docker builder prune -af
 docker compose up --build
 
-# Check logs
-docker compose logs backend | tail -50
-docker compose logs frontend | tail -50
+# Rebuild specific service
+docker compose build gateway
+docker compose up -d gateway
+```
+
+### Frontend Not Loading
+```bash
+# Check Nginx logs
+docker compose logs frontend
+
+# Verify backend/gateway are running
+curl http://localhost:9090/poormansRateLimit/api/admin/rules
+curl http://localhost:8080/poormansRateLimit/api/tokens/form
+
+# Test Nginx proxy
+curl -v http://localhost:3000/poormansRateLimit/api/admin/config
+```
+
+### WebSocket Not Connecting
+```bash
+# Check backend logs for WebSocket messages
+docker compose logs backend | grep WebSocket
+
+# Verify WebSocket endpoint
+wscat -c ws://localhost:9090/poormansRateLimit/api/admin/ws/analytics
+# (requires: npm install -g wscat)
+
+# In browser DevTools, check Network tab → WS filter
+```
+
+### Rate Limits Not Working
+```bash
+# Verify rules loaded in gateway
+docker compose logs gateway | grep "Loaded.*rate limit rules"
+
+# Check Redis for rules
+docker exec -it rate-limiter-gateway-redis-1 redis-cli -a dev-only-change-me
+> KEYS rate_limit_rules:*
+> HGETALL rate_limit_rules:<uuid>
+
+# Manually refresh rules cache on gateway
+curl -X POST http://localhost:9090/poormansRateLimit/api/admin/rules/refresh
 ```
 
 ## 📖 Additional Documentation
 
 - **[QUEUEING_IMPLEMENTATION.md](QUEUEING_IMPLEMENTATION.md)** - Leaky bucket technical details
+- **[JWT_RATE_LIMITING.md](JWT_RATE_LIMITING.md)** - JWT-based rate limiting guide
+- **[BODY_BASED_RATE_LIMITING.md](BODY_BASED_RATE_LIMITING.md)** - Body field extraction docs
 - **[AUTOMATED_QUEUEING_TESTS.md](AUTOMATED_QUEUEING_TESTS.md)** - Test specifications
+- **[ADMIN_API_SECURITY.md](ADMIN_API_SECURITY.md)** - Security architecture
+- **[SECURITY_AUDIT.md](SECURITY_AUDIT.md)** - Security review findings
 - **[CODEBASE_OVERVIEW.md](CODEBASE_OVERVIEW.md)** - Architectural summary
 - **[TEST-README.md](TEST-README.md)** - Testing guide
+- **[CLAUDE.md](CLAUDE.md)** - AI assistant instructions
 
 ## 🚢 Deployment
 
-### Ports
-| Service | Port | Description |
-|---------|------|-------------|
-| Frontend | 3000 | Admin UI (Nginx) |
-| Gateway | 8080 | Public gateway routes |
-| Admin API | 9090 | Admin endpoints (/api/**) |
-| Redis | 6379 | Database |
-| Test Server | 9000 | Testing utility |
+### Service Ports
+| Service | Port | Access | Purpose |
+|---------|------|--------|---------|
+| Gateway | 8080 | Public | Rate limiting, anti-bot, request routing |
+| Admin Service | 9090 | Localhost-only | Admin APIs, WebSocket analytics |
+| Frontend | 3000 | Localhost-only | Admin UI (Nginx reverse proxy) |
+| Redis | 6379 | Localhost-only | Central state store |
+| Test Server | 9000 | Localhost-only | Testing utility |
 
 ### Environment Variables
+
+**Gateway Service:**
 ```bash
-# Backend
-REDIS_HOST=localhost
+REDIS_HOST=redis
 REDIS_PORT=6379
-TEST_SERVER_URL=http://localhost:9000
+REDIS_PASSWORD=dev-only-change-me
+TEST_SERVER_URL=http://test-server:9000
+HTTPBIN_URL=http://httpbin:80
 ```
 
+**Admin Service:**
+```bash
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_PASSWORD=dev-only-change-me
+```
+
+### Dockerfile Builds
+
+Both services use multi-stage Docker builds:
+1. **Build stage**: Maven build with dependencies cached
+2. **Runtime stage**: Eclipse Temurin JRE 21, minimal surface area
+
 ### Production Checklist
-- [ ] Secure Redis access (auth, ACLs, private network)
-- [ ] Configure CORS for your frontend domain
-- [ ] Enable HTTPS with TLS certificates
-- [ ] Set up Redis backups (AOF/RDB) and monitoring
-- [ ] Tune cache sizes in `AntiBotFilter.java`
-- [ ] Configure log aggregation for `traffic_logs`
-- [ ] Set up health checks and metrics
+- [ ] Secure Redis access (strong password, ACLs, private network)
+- [ ] Configure CORS for specific frontend domain (no wildcard)
+- [ ] Enable HTTPS with TLS certificates (Let's Encrypt, cert-manager)
+- [ ] Set up Redis backups (AOF + RDB snapshots) and monitoring
+- [ ] Tune Caffeine cache sizes in `AntiBotFilter.java` based on traffic
+- [ ] Configure proper log aggregation for `traffic_logs` (max list size)
+- [ ] Set up health checks and metrics (Spring Actuator, Prometheus)
+- [ ] Implement proper authentication for admin APIs (OAuth2, JWT validation)
+- [ ] Review and apply security recommendations from `SECURITY_AUDIT.md`
+- [ ] Configure rate limit rules for your specific API endpoints
+- [ ] Test failover scenarios (Redis down, service restarts)
+
+## 🤝 Contributing
+
+This is a demonstration/learning project. For production use, consider:
+- Adding authentication/authorization to admin APIs
+- Implementing distributed rate limiting (Redis Cluster, Hazelcast)
+- Adding observability (OpenTelemetry, distributed tracing)
+- Implementing proper secret management
+- Adding CI/CD pipelines with security scanning
 
 ## 📄 License
 
 Not specified - proprietary or custom license.
+

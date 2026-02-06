@@ -23,8 +23,8 @@ services:
       - "127.0.0.1:8081:80"  # SECURITY: Localhost only - httpbin is for testing/gateway routing only
     restart: always
 
-  backend:
-    build: ./backend
+  gateway:
+    build: ./gateway
     ports:
       - "8080:8080"              # Gateway on 8080 (public): Rate limiting, anti-bot, request routing
     environment:
@@ -39,8 +39,8 @@ services:
       - httpbin
     restart: always
 
-  admin-service:
-    build: ./admin-service
+  backend:
+    build: ./backend
     ports:
       - "127.0.0.1:9090:9090"    # Admin APIs on 9090 (localhost only via OS-level port binding)
                                  # - Separate Spring Boot app for isolation
@@ -59,8 +59,8 @@ services:
     ports:
       - "127.0.0.1:3000:80"  # Only listen on localhost
     depends_on:
+      - gateway
       - backend
-      - admin-service
     restart: always
 
 volumes:
